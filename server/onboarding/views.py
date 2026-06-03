@@ -117,3 +117,44 @@ def onboarding_email(request):
             "recipient": settings.TEST_RECIPIENT,
         }
     )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def forgot_password(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"message": "Invalid JSON payload."}, status=400)
+
+    email = (payload.get("email") or "").strip()
+    if not email or not re.match(PERSONAL_EMAIL_REGEX, email):
+        return JsonResponse({"message": "Enter a valid email address."}, status=400)
+
+    if not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD:
+        return JsonResponse(
+            {"message": "Email settings not configured."},
+            status=500,
+        )
+
+    try:
+        message = EmailMessage(
+            subject="Password Reset Request",
+            body=(
+                f"You requested a password reset for your account associated with {email}.\n\n"
+                f"The hardcoded credentials for this portal are:\n"
+                f"Email: admin@example.com\n"
+                f"Password: admin123\n\n"
+                f"Please use these credentials to login."
+            ),
+            from_email=settings.EMAIL_HOST_USER,
+            to=[settings.TEST_RECIPIENT],  
+        )
+        message.send(fail_silently=False)
+    except Exception as exc:
+        error_message = "Unable to send mail right now."
+        if settings.DEBUG:
+            error_message = f"Unable to send mail right now: {exc}"
+        return JsonResponse({"message": error_message}, status=500)
+
+    return JsonResponse({"message": "Password reset email sent successfully."})

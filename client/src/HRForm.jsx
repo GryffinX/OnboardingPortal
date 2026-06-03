@@ -1,36 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./HRForm.css";
-
-const departmentDirectory = {
-  IT: {
-    managers: ["Bharat Sinha"],
-    hods: ["Anjali Mehta"],
-  },
-  HR: {
-    managers: ["Priya Sharma", "Neha Kapoor"],
-    hods: ["Rohit Nair"],
-  },
-  BGV: {
-    managers: ["Amit Verma"],
-    hods: ["Sneha Iyer"],
-  },
-};
-
-function getInitialFormData() {
-  return {
-    name: "",
-    personalEmail: "",
-    officialEmailUser: "",
-    department: "",
-    lineManager: "",
-    hod: "",
-  };
-}
+import {
+  departmentDirectory,
+  getInitialFormData,
+  officialEmailDomain,
+} from "./onboardingData";
 
 const personalEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const officialEmailUserRegex = /^[a-zA-Z0-9._]+$/;
-const officialEmailDomain = "@securitas-india.com";
-const apiBaseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 function validateForm(formData) {
   const nextErrors = {};
@@ -63,8 +40,26 @@ function validateForm(formData) {
   return nextErrors;
 }
 
-export default function HRForm() {
-  const [formData, setFormData] = useState(() => getInitialFormData());
+function mergeFormData(initialData) {
+  return {
+    ...getInitialFormData(),
+    ...(initialData || {}),
+  };
+}
+
+export default function HRForm({
+  title = "Onboarding Form",
+  subtitle = "Fill in employee details and assign reporting contacts before submission.",
+  submitLabel = "Submit",
+  successPrimaryMessage = "Successfully submitted.",
+  initialData,
+  onSubmitForm,
+  onSuccess,
+  onCancel,
+  resetOnSuccess = true,
+  embedded = false,
+}) {
+  const [formData, setFormData] = useState(() => mergeFormData(initialData));
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState({
@@ -75,6 +70,16 @@ export default function HRForm() {
   const selectedDepartment = departmentDirectory[formData.department];
   const managerOptions = selectedDepartment?.managers ?? [];
   const hodOptions = selectedDepartment?.hods ?? [];
+
+  useEffect(() => {
+    setFormData(mergeFormData(initialData));
+    setErrors({});
+    setIsSubmitting(false);
+    setSubmitState({
+      type: "",
+      mailMessage: "",
+    });
+  }, [initialData]);
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -126,24 +131,18 @@ export default function HRForm() {
     });
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/onboarding-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
+      const payload = onSubmitForm
+        ? await onSubmitForm(formData)
+        : { ok: false, message: "No submit handler is configured for this form." };
 
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        if (payload.errors) {
+      if (!payload?.ok) {
+        if (payload?.errors) {
           setErrors(payload.errors);
         }
 
         setSubmitState({
           type: "error",
-          mailMessage: payload.message || "Unable to submit the form.",
+          mailMessage: payload?.message || "Unable to submit the form.",
         });
         return;
       }
@@ -152,8 +151,13 @@ export default function HRForm() {
         type: "success",
         mailMessage: payload.message || "Mail sent successfully",
       });
-      setFormData(getInitialFormData());
+
+      if (resetOnSuccess) {
+        setFormData(getInitialFormData());
+      }
+
       setErrors({});
+      onSuccess?.(formData, payload);
     } catch {
       setSubmitState({
         type: "error",
@@ -165,30 +169,30 @@ export default function HRForm() {
   }
 
   function handleCancel() {
-    setFormData(getInitialFormData());
+    setFormData(mergeFormData(initialData));
     setErrors({});
     setSubmitState({
       type: "",
       mailMessage: "",
     });
+    onCancel?.();
   }
 
   return (
-    <section className="hr-form-page">
+    <section className={`hr-form-shell ${embedded ? "hr-form-shell-embedded" : "hr-form-page"}`}>
       <div className="hr-form-card">
         <div className="hr-form-header">
-          <h2 className="hr-form-title">Onboarding Form</h2>
+          <h2 className="hr-form-title">{title}</h2>
         </div>
 
         <div className="hr-form-body">
           <p className="hr-form-subtitle">
-            Fill in employee details and assign reporting contacts before
-            submission.
+            {subtitle}
           </p>
 
           {submitState.type === "success" ? (
             <div className="hr-form-status hr-form-status-success">
-              <p>Successfully submitted.</p>
+              <p>{successPrimaryMessage}</p>
               <p>{submitState.mailMessage}</p>
             </div>
           ) : null}
@@ -315,7 +319,7 @@ export default function HRForm() {
                 className="hr-form-submit"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? "Sending..." : "Submit"}
+                {isSubmitting ? "Sending..." : submitLabel}
               </button>
               <button
                 type="button"
