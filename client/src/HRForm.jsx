@@ -30,6 +30,7 @@ function getInitialFormData() {
 const personalEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const officialEmailUserRegex = /^[a-zA-Z0-9._]+$/;
 const officialEmailDomain = "@securitas-india.com";
+const apiBaseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 function validateForm(formData) {
   const nextErrors = {};
@@ -65,6 +66,11 @@ function validateForm(formData) {
 export default function HRForm() {
   const [formData, setFormData] = useState(() => getInitialFormData());
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitState, setSubmitState] = useState({
+    type: "",
+    mailMessage: "",
+  });
 
   const selectedDepartment = departmentDirectory[formData.department];
   const managerOptions = selectedDepartment?.managers ?? [];
@@ -97,9 +103,13 @@ export default function HRForm() {
       ...prevErrors,
       [name]: "",
     }));
+    setSubmitState({
+      type: "",
+      mailMessage: "",
+    });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     const nextErrors = validateForm(formData);
@@ -109,149 +119,215 @@ export default function HRForm() {
       return;
     }
 
-    console.log({
-      ...formData,
-      officialEmail: `${formData.officialEmailUser}${officialEmailDomain}`,
+    setIsSubmitting(true);
+    setSubmitState({
+      type: "",
+      mailMessage: "",
     });
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/onboarding-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (payload.errors) {
+          setErrors(payload.errors);
+        }
+
+        setSubmitState({
+          type: "error",
+          mailMessage: payload.message || "Unable to submit the form.",
+        });
+        return;
+      }
+
+      setSubmitState({
+        type: "success",
+        mailMessage: payload.message || "Mail sent successfully",
+      });
+      setFormData(getInitialFormData());
+      setErrors({});
+    } catch {
+      setSubmitState({
+        type: "error",
+        mailMessage: "Unable to reach the mail service.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleCancel() {
     setFormData(getInitialFormData());
     setErrors({});
+    setSubmitState({
+      type: "",
+      mailMessage: "",
+    });
   }
 
   return (
     <section className="hr-form-page">
       <div className="hr-form-card">
-        <h2 className="hr-form-title">Employee Onboarding Form</h2>
-        <p className="hr-form-subtitle">
-          Fill in employee details and assign reporting contacts before
-          submission.
-        </p>
+        <div className="hr-form-header">
+          <h2 className="hr-form-title">Onboarding Form</h2>
+        </div>
 
-        <form onSubmit={handleSubmit} className="hr-form-grid" noValidate>
-          <label className="hr-form-field">
-            <span className="hr-form-label">Employee Name</span>
-            <input
-              className="hr-form-input"
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              placeholder="Enter employee name"
-            />
-            {errors.name ? <p className="hr-form-error">{errors.name}</p> : null}
-          </label>
+        <div className="hr-form-body">
+          <p className="hr-form-subtitle">
+            Fill in employee details and assign reporting contacts before
+            submission.
+          </p>
 
-          <label className="hr-form-field">
-            <span className="hr-form-label">Personal Email</span>
-            <input
-              className="hr-form-input"
-              type="email"
-              name="personalEmail"
-              value={formData.personalEmail}
-              onChange={handleChange}
-              placeholder="name@example.com"
-            />
-            {errors.personalEmail ? (
-              <p className="hr-form-error">{errors.personalEmail}</p>
-            ) : null}
-          </label>
-
-          <label className="hr-form-field">
-            <span className="hr-form-label">Proposed Official Mail</span>
-            <div className="hr-form-email-wrap">
-              <input
-                className="hr-form-input hr-form-email-input"
-                type="text"
-                name="officialEmailUser"
-                value={formData.officialEmailUser}
-                onChange={handleChange}
-                placeholder="username"
-                autoComplete="off"
-              />
-              <span className="hr-form-email-domain">
-                {officialEmailDomain}
-              </span>
+          {submitState.type === "success" ? (
+            <div className="hr-form-status hr-form-status-success">
+              <p>Successfully submitted.</p>
+              <p>{submitState.mailMessage}</p>
             </div>
-            {errors.officialEmail ? (
-              <p className="hr-form-error">{errors.officialEmail}</p>
-            ) : null}
-          </label>
+          ) : null}
 
-          <label className="hr-form-field">
-            <span className="hr-form-label">Department</span>
-            <select
-              className="hr-form-input"
-              name="department"
-              value={formData.department}
-              onChange={handleChange}
-            >
-              <option value="">Select department</option>
-              {Object.keys(departmentDirectory).map((department) => (
-                <option key={department} value={department}>
-                  {department}
-                </option>
-              ))}
-            </select>
-            {errors.department ? (
-              <p className="hr-form-error">{errors.department}</p>
-            ) : null}
-          </label>
+          {submitState.type === "error" ? (
+            <div className="hr-form-status hr-form-status-error">
+              <p>{submitState.mailMessage}</p>
+            </div>
+          ) : null}
 
-          <label className="hr-form-field">
-            <span className="hr-form-label">Line Manager</span>
-            <select
-              className="hr-form-input"
-              name="lineManager"
-              value={formData.lineManager}
-              onChange={handleChange}
-              disabled={!selectedDepartment}
-            >
-              <option value="">Select line manager</option>
-              {managerOptions.map((manager) => (
-                <option key={manager} value={manager}>
-                  {manager}
-                </option>
-              ))}
-            </select>
-            {errors.lineManager ? (
-              <p className="hr-form-error">{errors.lineManager}</p>
-            ) : null}
-          </label>
+          <form onSubmit={handleSubmit} className="hr-form-grid" noValidate>
+            <label className="hr-form-field">
+              <span className="hr-form-label">Employee Name</span>
+              <input
+                className="hr-form-input"
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                placeholder="Enter employee name"
+              />
+              {errors.name ? <p className="hr-form-error">{errors.name}</p> : null}
+            </label>
 
-          <label className="hr-form-field">
-            <span className="hr-form-label">HOD</span>
-            <select
-              className="hr-form-input"
-              name="hod"
-              value={formData.hod}
-              onChange={handleChange}
-              disabled={!selectedDepartment}
-            >
-              <option value="">Select HOD</option>
-              {hodOptions.map((hod) => (
-                <option key={hod} value={hod}>
-                  {hod}
-                </option>
-              ))}
-            </select>
-            {errors.hod ? <p className="hr-form-error">{errors.hod}</p> : null}
-          </label>
+            <label className="hr-form-field">
+              <span className="hr-form-label">Personal Email</span>
+              <input
+                className="hr-form-input"
+                type="email"
+                name="personalEmail"
+                value={formData.personalEmail}
+                onChange={handleChange}
+                placeholder="name@example.com"
+              />
+              {errors.personalEmail ? (
+                <p className="hr-form-error">{errors.personalEmail}</p>
+              ) : null}
+            </label>
 
-          <div className="hr-form-actions">
-            <button type="submit" className="hr-form-submit">
-              Submit
-            </button>
-            <button
-              type="button"
-              className="hr-form-cancel"
-              onClick={handleCancel}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+            <label className="hr-form-field">
+              <span className="hr-form-label">Proposed Official Mail</span>
+              <div className="hr-form-email-wrap">
+                <input
+                  className="hr-form-input hr-form-email-input"
+                  type="text"
+                  name="officialEmailUser"
+                  value={formData.officialEmailUser}
+                  onChange={handleChange}
+                  placeholder="username"
+                  autoComplete="off"
+                />
+                <span className="hr-form-email-domain">
+                  {officialEmailDomain}
+                </span>
+              </div>
+              {errors.officialEmail ? (
+                <p className="hr-form-error">{errors.officialEmail}</p>
+              ) : null}
+            </label>
+
+            <label className="hr-form-field">
+              <span className="hr-form-label">Department</span>
+              <select
+                className="hr-form-input"
+                name="department"
+                value={formData.department}
+                onChange={handleChange}
+              >
+                <option value="">Select department</option>
+                {Object.keys(departmentDirectory).map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </select>
+              {errors.department ? (
+                <p className="hr-form-error">{errors.department}</p>
+              ) : null}
+            </label>
+
+            <label className="hr-form-field">
+              <span className="hr-form-label">Line Manager</span>
+              <select
+                className="hr-form-input"
+                name="lineManager"
+                value={formData.lineManager}
+                onChange={handleChange}
+                disabled={!selectedDepartment}
+              >
+                <option value="">Select line manager</option>
+                {managerOptions.map((manager) => (
+                  <option key={manager} value={manager}>
+                    {manager}
+                  </option>
+                ))}
+              </select>
+              {errors.lineManager ? (
+                <p className="hr-form-error">{errors.lineManager}</p>
+              ) : null}
+            </label>
+
+            <label className="hr-form-field">
+              <span className="hr-form-label">HOD</span>
+              <select
+                className="hr-form-input"
+                name="hod"
+                value={formData.hod}
+                onChange={handleChange}
+                disabled={!selectedDepartment}
+              >
+                <option value="">Select HOD</option>
+                {hodOptions.map((hod) => (
+                  <option key={hod} value={hod}>
+                    {hod}
+                  </option>
+                ))}
+              </select>
+              {errors.hod ? <p className="hr-form-error">{errors.hod}</p> : null}
+            </label>
+
+            <div className="hr-form-actions">
+              <button
+                type="submit"
+                className="hr-form-submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Sending..." : "Submit"}
+              </button>
+              <button
+                type="button"
+                className="hr-form-cancel"
+                onClick={handleCancel}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
   );
