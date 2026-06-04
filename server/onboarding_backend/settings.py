@@ -93,8 +93,14 @@ ASGI_APPLICATION = "onboarding_backend.asgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "mssql",
+        "NAME": "OnboardingApp",
+        "HOST": "localhost",
+        "OPTIONS": {
+            "driver": "ODBC Driver 18 for SQL Server",
+            "trusted_connection": "yes",
+            "extra_params": "TrustServerCertificate=yes;",
+        },
     }
 }
 
