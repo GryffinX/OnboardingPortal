@@ -11,5 +11,8 @@ urlpatterns = [
     path("reset-password", views.reset_password, name="reset-password"),
     path("login", views.login_view, name="login"),
     path("create-user", views.create_user, name="create-user"),
+    path("update-user", views.update_user, name="update-user"),
     path("users", views.get_users, name="get-users"),
+    path("departments", views.get_departments, name="get-departments"),
+    path("finalize-onboarding", views.finalize_onboarding, name="finalize-onboarding"),
 ]

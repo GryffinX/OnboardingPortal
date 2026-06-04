@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import "./HRForm.css";
 import {
-  departmentDirectory,
   getInitialFormData,
   officialEmailDomain,
 } from "./onboardingData";
@@ -34,7 +33,7 @@ function validateForm(formData) {
   }
 
   if (!formData.hod) {
-    nextErrors.hod = "Select an HOD.";
+    nextErrors.hod = "Select a HOD.";
   }
 
   return nextErrors;
@@ -58,6 +57,7 @@ export default function HRForm({
   onCancel,
   resetOnSuccess = true,
   embedded = false,
+  apiBaseUrl = "http://127.0.0.1:8000",
 }) {
   const [formData, setFormData] = useState(() => mergeFormData(initialData));
   const [errors, setErrors] = useState({});
@@ -66,14 +66,48 @@ export default function HRForm({
     type: "",
     mailMessage: "",
   });
+  const [staff, setStaff] = useState([]);
 
-  const selectedDepartment = departmentDirectory[formData.department];
-  const managerOptions = selectedDepartment?.managers ?? [];
-  const hodOptions = selectedDepartment?.hods ?? [];
+  useEffect(() => {
+    const fetchStaff = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/users`);
+        const data = await response.json();
+        if (response.ok) {
+          setStaff(data.users);
+        }
+      } catch (err) {
+        console.error("Failed to fetch staff", err);
+      }
+    };
+    fetchStaff();
+  }, [apiBaseUrl]);
+
+  const departments = [...new Set(staff.map(u => u.department).filter(Boolean))];
+  const managerOptions = staff
+    .filter(u => u.role === "Manager" && u.department === formData.department)
+    .map(u => u.name);
+  const hodOptions = staff
+    .filter(u => u.role === "HOD" && u.department === formData.department)
+    .map(u => u.name);
+
+  useEffect(() => {
+    if (managerOptions.length === 1 && formData.lineManager === "") {
+      setFormData(prev => ({ ...prev, lineManager: managerOptions[0] }));
+    }
+  }, [managerOptions, formData.lineManager]);
+
+  useEffect(() => {
+    if (hodOptions.length === 1 && formData.hod === "") {
+      setFormData(prev => ({ ...prev, hod: hodOptions[0] }));
+    }
+  }, [hodOptions, formData.hod]);
 
   useEffect(() => {
     setFormData(mergeFormData(initialData));
-    setErrors({});
+  }, [initialData]);
+
+  useEffect(() => {
     setIsSubmitting(false);
     setSubmitState({
       type: "",
@@ -86,15 +120,11 @@ export default function HRForm({
 
     setFormData((prevFormData) => {
       if (name === "department") {
-        const nextDepartment = departmentDirectory[value];
-        const nextManagers = nextDepartment?.managers ?? [];
-        const nextHods = nextDepartment?.hods ?? [];
-
         return {
           ...prevFormData,
           department: value,
-          lineManager: nextManagers.length === 1 ? nextManagers[0] : "",
-          hod: nextHods.length === 1 ? nextHods[0] : "",
+          lineManager: "",
+          hod: "",
         };
       }
 
@@ -262,9 +292,9 @@ export default function HRForm({
                 onChange={handleChange}
               >
                 <option value="">Select department</option>
-                {Object.keys(departmentDirectory).map((department) => (
-                  <option key={department} value={department}>
-                    {department}
+                {departments.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
                   </option>
                 ))}
               </select>
@@ -280,7 +310,7 @@ export default function HRForm({
                 name="lineManager"
                 value={formData.lineManager}
                 onChange={handleChange}
-                disabled={!selectedDepartment}
+                disabled={!formData.department}
               >
                 <option value="">Select line manager</option>
                 {managerOptions.map((manager) => (
@@ -301,7 +331,7 @@ export default function HRForm({
                 name="hod"
                 value={formData.hod}
                 onChange={handleChange}
-                disabled={!selectedDepartment}
+                disabled={!formData.department}
               >
                 <option value="">Select HOD</option>
                 {hodOptions.map((hod) => (

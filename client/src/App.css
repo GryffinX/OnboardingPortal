@@ -102,33 +102,87 @@
 }
 
 .app-notice {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  background: #ffffff;
-  border-radius: 18px;
-  padding: 18px 20px;
-  margin-bottom: 22px;
-  border: 1px solid #dbe7f3;
+  margin-bottom: 24px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: none;
 }
 
-.app-notice strong {
+.app-notice-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  gap: 16px;
+}
+
+.app-notice-text {
+  flex: 1;
+}
+
+.app-notice-text strong {
   display: block;
+  font-size: 1rem;
   margin-bottom: 4px;
 }
 
-.app-notice p {
+.app-notice-text p {
   margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.app-notice-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  border-radius: 50%;
+  font-size: 1rem;
+  flex-shrink: 0;
+  border: none !important;
+  background: rgba(0, 0, 0, 0.1) !important;
+  color: inherit !important;
+}
+
+.app-notice-progress {
+  height: 4px;
+  background: rgba(0, 0, 0, 0.1);
+  width: 100%;
+}
+
+.app-notice-progress-bar {
+  height: 100%;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.6);
+  animation: notice-progress 5s linear forwards;
+  transform-origin: left;
+}
+
+@keyframes notice-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 .app-notice-success {
-  border-left: 6px solid #16a34a;
+  background: #10b981;
+  color: #ffffff;
+}
+
+.app-notice-error {
+  background: #ef4444;
+  color: #ffffff;
 }
 
 .app-notice-warning {
-  border-left: 6px solid #d97706;
+  background: #f59e0b;
+  color: #ffffff;
 }
+
 
 .dashboard-layout {
   display: grid;
@@ -367,6 +421,17 @@
   border-radius: 18px;
   padding: 18px;
   margin-bottom: 16px;
+  position: relative;
+}
+
+.software-card-header {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.7;
 }
 
 .software-card h4,
@@ -388,6 +453,26 @@
 .software-card-yellow {
   background: linear-gradient(135deg, #fef3c7, #fffbeb);
   color: #92400e;
+}
+
+.software-card-orange {
+  background: linear-gradient(135deg, #ffedd5, #fff7ed);
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+}
+
+.software-card-black {
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  color: #f8fafc;
+  border: 1px solid #334155;
+}
+
+.software-card-black h4 {
+  color: #f1f5f9;
+}
+
+.software-card-black .software-card-header {
+  opacity: 0.9;
 }
 
 .software-input-card {

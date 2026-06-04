@@ -78,10 +78,13 @@ function buildRequest(id, formData, overrides = {}) {
     submittedAt,
     lastUpdated: overrides.lastUpdated || submittedAt,
     additionalSoftware: overrides.additionalSoftware || [],
+    managerSoftware: overrides.managerSoftware || [],
+    hodSoftware: overrides.hodSoftware || [],
     preInstalledSoftware: overrides.preInstalledSoftware || preInstalledSoftware,
     employeeInstalledSoftware:
       overrides.employeeInstalledSoftware || employeeInstalledSoftware,
     reviewRequestedBy: overrides.reviewRequestedBy || "",
+    reviewReason: overrides.reviewReason || "",
     revisionCount: overrides.revisionCount || 0,
     managerApprovedAt: overrides.managerApprovedAt || "",
     hodApprovedAt: overrides.hodApprovedAt || "",
@@ -140,6 +143,7 @@ const seededRequests = [
       stage: workflowStages.hr,
       additionalSoftware: ["Canva", "Adobe Acrobat"],
       reviewRequestedBy: "HOD",
+      reviewReason: "Please verify the personal email domain.",
       revisionCount: 1,
       managerApprovedAt: "01 Jun 2026",
     },
@@ -199,19 +203,34 @@ function matchesSearch(request, term) {
 }
 
 function AppNotice({ notice, onClear }) {
+  useEffect(() => {
+    if (!notice) return;
+    
+    const timer = setTimeout(() => {
+      onClear();
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [notice, onClear]);
+
   if (!notice) {
     return null;
   }
 
   return (
     <div className={`app-notice app-notice-${notice.type}`}>
-      <div>
-        <strong>{notice.title}</strong>
-        <p>{notice.message}</p>
+      <div className="app-notice-content">
+        <div className="app-notice-text">
+          <strong>{notice.title}</strong>
+          <p>{notice.message}</p>
+        </div>
+        <button type="button" className="ghost-button app-notice-close" onClick={onClear}>
+          ✕
+        </button>
       </div>
-      <button type="button" className="ghost-button" onClick={onClear}>
-        Dismiss
-      </button>
+      <div className="app-notice-progress">
+        <div className="app-notice-progress-bar"></div>
+      </div>
     </div>
   );
 }
@@ -336,9 +355,11 @@ function RequestTable({
   );
 }
 
-function SoftwareSection({ title, tone, items }) {
+function SoftwareSection({ title, tone, items, headerLabel }) {
+  if (!items || items.length === 0) return null;
   return (
     <section className={`software-card software-card-${tone}`}>
+      {headerLabel && <div className="software-card-header">{headerLabel}</div>}
       <div>
         <h4>{title}</h4>
         <p>{items.join(", ")}</p>
@@ -355,13 +376,18 @@ function RequestDetailPanel({
   onSaveSoftware,
   onStartHrEdit,
 }) {
-  const [softwareDraft, setSoftwareDraft] = useState(
-    request?.additionalSoftware.join(", ") || "",
-  );
+  const [softwareDraft, setSoftwareDraft] = useState("");
 
   useEffect(() => {
-    setSoftwareDraft(request?.additionalSoftware.join(", ") || "");
-  }, [request]);
+    // Determine draft based on current role
+    if (role === pages.manager) {
+      setSoftwareDraft(request?.managerSoftware?.join(", ") || "");
+    } else if (role === pages.hod) {
+      setSoftwareDraft(request?.hodSoftware?.join(", ") || "");
+    } else {
+      setSoftwareDraft("");
+    }
+  }, [request, role]);
 
   if (!request) {
     return (
@@ -430,33 +456,50 @@ function RequestDetailPanel({
         items={request.employeeInstalledSoftware}
       />
 
-      <section className="software-input-card">
-        <h4>Additional software to be installed</h4>
-        <p>
-          Enter a comma-separated list that should be added on top of the
-          standard software set.
-        </p>
-        <textarea
-          value={softwareDraft}
-          onChange={(event) => setSoftwareDraft(event.target.value)}
-          placeholder="Example: Tableau, Figma, Adobe Acrobat"
-          disabled={!canAct}
-        />
-        <div className="detail-actions detail-actions-compact">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => onSaveSoftware(request.id, normalizeSoftwareList(softwareDraft))}
-            disabled={!canAct}
-          >
-            Save Software List
-          </button>
-        </div>
-      </section>
+      <SoftwareSection
+        title="Software listed by Line Manager"
+        tone="orange"
+        items={request.managerSoftware}
+        headerLabel={request.formData.lineManager}
+      />
 
-      {request.reviewRequestedBy ? (
-        <div className="review-banner">
-          Sent to HR review by {request.reviewRequestedBy}.
+      <SoftwareSection
+        title="Software listed by HOD"
+        tone="black"
+        items={request.hodSoftware}
+        headerLabel={request.formData.hod}
+      />
+
+      {canAct && (
+        <section className="software-input-card">
+          <h4>Add/Edit Software List</h4>
+          <p>
+            {role === pages.manager 
+              ? "List any additional software needed for this employee." 
+              : "Review or add more software to the HOD software list."}
+          </p>
+          <textarea
+            value={softwareDraft}
+            onChange={(event) => setSoftwareDraft(event.target.value)}
+            placeholder="Example: Tableau, Figma, Adobe Acrobat"
+          />
+          <div className="detail-actions detail-actions-compact">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onSaveSoftware(request.id, normalizeSoftwareList(softwareDraft), role)}
+            >
+              Save My Software List
+            </button>
+          </div>
+        </section>
+      )}
+
+      {request.reviewReason ? (
+        <div className="review-banner" style={{ borderLeft: "4px solid #f59e0b", background: "#fffbeb", color: "#92400e" }}>
+          <strong>Reason for HR Review:</strong>
+          <p style={{ marginTop: "4px" }}>{request.reviewReason}</p>
+          <small style={{ display: "block", marginTop: "8px", opacity: 0.8 }}>Requested by: {request.reviewRequestedBy}</small>
         </div>
       ) : null}
 
@@ -656,6 +699,29 @@ function App() {
     }
   };
 
+  const handleUpdateUser = async (user) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/update-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(user),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        showNotice("success", "User Updated", data.message);
+        fetchUsers(); // Refresh the list
+      } else {
+        showNotice("error", "Failed to Update User", data.message);
+      }
+    } catch (error) {
+      showNotice("error", "Error", "Unable to reach the server.");
+    }
+  };
+
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(null);
@@ -753,23 +819,47 @@ function App() {
     );
   }
 
-  function handleHodApprove(requestId) {
-    updateRequest(
-      requestId,
-      (request) => ({
-        ...request,
-        stage: workflowStages.approved,
-        lastUpdated: getTodayLabel(),
-        hodApprovedAt: getTodayLabel(),
-        reviewRequestedBy: "",
-      }),
-      {
-        type: "success",
-        title: "Request approved",
-        message: (request) =>
-          `${request.formData.name} has completed the approval workflow.`,
-      },
-    );
+  async function handleHodApprove(requestId) {
+    const request = requests.find(r => r.id === requestId);
+    if (!request) return;
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/finalize-onboarding`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: request.formData.name,
+          email: request.formData.personalEmail,
+          department: request.formData.department
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        showNotice("error", "Automation Failed", data.message || "Failed to create user account.");
+        return;
+      }
+      
+      updateRequest(
+        requestId,
+        (req) => ({
+          ...req,
+          stage: workflowStages.approved,
+          lastUpdated: getTodayLabel(),
+          hodApprovedAt: getTodayLabel(),
+          reviewRequestedBy: "",
+        }),
+        {
+          type: "success",
+          title: "Request fully approved",
+          message: (req) =>
+            `${req.formData.name} has completed onboarding. ${data.password ? `Default Password: ${data.password}` : ""}`,
+        },
+      );
+    } catch (err) {
+      showNotice("error", "Network Error", "Unable to reach the server to finalize onboarding.");
+    }
   }
 
   function handleSendToHr(requestId, actorLabel, reason) {
@@ -797,19 +887,25 @@ function App() {
     setSelectedRequestId(requestId);
   }
 
-  function handleSaveSoftware(requestId, additionalSoftware) {
+  function handleSaveSoftware(requestId, additionalSoftware, role) {
     updateRequest(
       requestId,
-      (request) => ({
-        ...request,
-        additionalSoftware,
-        lastUpdated: getTodayLabel(),
-      }),
+      (request) => {
+        const update = {};
+        if (role === pages.manager) update.managerSoftware = additionalSoftware;
+        if (role === pages.hod) update.hodSoftware = additionalSoftware;
+        
+        return {
+          ...request,
+          ...update,
+          lastUpdated: getTodayLabel(),
+        };
+      },
       {
         type: "success",
         title: "Software list updated",
         message: (request) =>
-          `Additional software updated for ${request.formData.name}.`,
+          `Software list updated by ${role === pages.manager ? "Manager" : "HOD"} for ${request.formData.name}.`,
       },
     );
   }
@@ -954,47 +1050,64 @@ function App() {
         <AppNotice notice={notice} onClear={() => setNotice(null)} />
 
         {currentPage === pages.admin ? (
-          <AdminDashboard users={allUsers} onAddUser={handleAddUser} />
+          <AdminDashboard users={allUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} apiBaseUrl={apiBaseUrl} />
         ) : null}
 
         {currentPage === pages.status ? (
           <section className="dashboard-panel">
             <div className="dashboard-head">
               <div>
-                <h2>My Onboarding Status</h2>
-                <p>Track the progress of your onboarding request</p>
+                <h2>My Onboarding Record</h2>
+                <p>View your completed onboarding details and software setup</p>
               </div>
             </div>
             {(() => {
               const myRequest = requests.find(
                 (r) => r.formData.personalEmail === currentUser.email || r.officialEmail === currentUser.email
               );
+              
               if (!myRequest) {
                 return (
                   <div className="request-empty">
-                    No onboarding request found for your account. Please contact HR if you believe this is an error.
+                    No onboarding record found for your account email ({currentUser.email}).
                   </div>
                 );
               }
-              const stageMeta = getStageMeta(myRequest.stage);
-              return (
-                <div className="status-container" style={{ padding: "40px", textAlign: "center", background: "#f8fafc", borderRadius: "16px", marginTop: "24px" }}>
-                  <div style={{ marginBottom: "24px" }}>
-                    <span className={`status-pill status-pill-${stageMeta.tone}`} style={{ fontSize: "1.2rem", padding: "12px 24px" }}>
-                      {stageMeta.label}
-                    </span>
+
+              if (myRequest.stage !== workflowStages.approved) {
+                return (
+                  <div className="status-container" style={{ padding: "40px", textAlign: "center", background: "#f8fafc", borderRadius: "16px", marginTop: "24px" }}>
+                    <div style={{ marginBottom: "24px" }}>
+                      <span className={`status-pill status-pill-${getStageMeta(myRequest.stage).tone}`} style={{ fontSize: "1.2rem", padding: "12px 24px" }}>
+                        {getStageMeta(myRequest.stage).label}
+                      </span>
+                    </div>
+                    <h3 style={{ fontSize: "1.5rem", color: "#1e293b", marginBottom: "8px" }}>{myRequest.formData.name}</h3>
+                    <p style={{ color: "#64748b", marginBottom: "32px" }}>Onboarding in progress...</p>
+                    <div style={{ maxWidth: "500px", margin: "0 auto", textAlign: "left", background: "#ffffff", padding: "24px", borderRadius: "12px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}>
+                      <p style={{ margin: "0", color: "#475569" }}>{getStageMeta(myRequest.stage).description}</p>
+                    </div>
                   </div>
-                  <h3 style={{ fontSize: "1.5rem", color: "#1e293b", marginBottom: "8px" }}>{myRequest.formData.name}</h3>
-                  <p style={{ color: "#64748b", marginBottom: "32px" }}>Request ID: {myRequest.requestCode}</p>
-                  
-                  <div style={{ maxWidth: "500px", margin: "0 auto", textAlign: "left", background: "#ffffff", padding: "24px", borderRadius: "12px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}>
-                    <p style={{ margin: "0 0 16px", color: "#475569" }}>{stageMeta.description}</p>
-                    {myRequest.reviewReason && (
-                      <div style={{ padding: "12px", background: "#fffbeb", borderLeft: "4px solid #f59e0b", color: "#92400e" }}>
-                        <strong>Message from Reviewer:</strong>
-                        <p style={{ margin: "4px 0 0" }}>{myRequest.reviewReason}</p>
-                      </div>
-                    )}
+                );
+              }
+              
+              return (
+                <div className="status-record-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginTop: "24px" }}>
+                  <div className="record-card" style={{ background: "#ffffff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0" }}>
+                    <h4 style={{ margin: "0 0 16px", color: "#1e293b" }}>Employee Details</h4>
+                    <div className="detail-grid" style={{ gridTemplateColumns: "1fr" }}>
+                      <div><span>Name</span><strong>{myRequest.formData.name}</strong></div>
+                      <div><span>Official Email</span><strong>{myRequest.officialEmail}</strong></div>
+                      <div><span>Department</span><strong>{myRequest.formData.department}</strong></div>
+                      <div><span>Joining Date</span><strong>{myRequest.submittedAt}</strong></div>
+                    </div>
+                  </div>
+
+                  <div className="software-summary">
+                    <SoftwareSection title="Company Provided" tone="blue" items={myRequest.preInstalledSoftware} />
+                    <SoftwareSection title="To Be Installed" tone="yellow" items={myRequest.employeeInstalledSoftware} />
+                    <SoftwareSection title="Manager Recommended" tone="orange" items={myRequest.managerSoftware} headerLabel={myRequest.formData.lineManager} />
+                    <SoftwareSection title="HOD Recommended" tone="black" items={myRequest.hodSoftware} headerLabel={myRequest.formData.hod} />
                   </div>
                 </div>
               );
@@ -1008,6 +1121,7 @@ function App() {
             onSuccess={addRequest}
             successPrimaryMessage="Successfully submitted."
             subtitle="Create a new onboarding request. It will enter the line manager queue first, then move to HOD approval."
+            apiBaseUrl={apiBaseUrl}
           />
         ) : null}
 
@@ -1034,7 +1148,7 @@ function App() {
               request={selectedRequest}
               role={pages.manager}
               onApprove={handleManagerApprove}
-              onSendToHr={(requestId) => handleSendToHr(requestId, "Line Manager")}
+              onSendToHr={(requestId, actor, reason) => handleSendToHr(requestId, actor, reason)}
               onSaveSoftware={handleSaveSoftware}
             />
           </section>
@@ -1063,7 +1177,7 @@ function App() {
               request={selectedRequest}
               role={pages.hod}
               onApprove={handleHodApprove}
-              onSendToHr={(requestId) => handleSendToHr(requestId, "HOD")}
+              onSendToHr={(requestId, actor, reason) => handleSendToHr(requestId, actor, reason)}
               onSaveSoftware={handleSaveSoftware}
             />
           </section>
@@ -1093,18 +1207,32 @@ function App() {
               />
 
               {hrEditingRequest ? (
-                <HRForm
-                  title="HR Re-submit Request"
-                  subtitle="Update the request details and send the onboarding mail back through the same flow."
-                  submitLabel="Re-submit Request"
-                  successPrimaryMessage="HR review submitted."
-                  initialData={hrEditingRequest.formData}
-                  onSubmitForm={sendOnboardingMail}
-                  onSuccess={handleHrResubmitSuccess}
-                  onCancel={handleHrEditCancel}
-                  resetOnSuccess={false}
-                  embedded
-                />
+                <div className="modal-backdrop">
+                  <div className="modal-card" style={{ width: "90%", maxWidth: "800px", maxHeight: "90vh", overflowY: "auto" }}>
+                    <div className="modal-topbar">
+                      <div>
+                        <h3>HR Re-submit Request</h3>
+                        <p>Update the request details and send the onboarding mail back through the same flow.</p>
+                      </div>
+                      <button className="ghost-button" onClick={handleHrEditCancel}>✕</button>
+                    </div>
+                    <div style={{ padding: "24px" }}>
+                      <HRForm
+                        title=""
+                        subtitle=""
+                        submitLabel="Re-submit Request"
+                        successPrimaryMessage="HR review submitted."
+                        initialData={hrEditingRequest.formData}
+                        onSubmitForm={sendOnboardingMail}
+                        onSuccess={handleHrResubmitSuccess}
+                        onCancel={handleHrEditCancel}
+                        resetOnSuccess={false}
+                        embedded
+                        apiBaseUrl={apiBaseUrl}
+                      />
+                    </div>
+                  </div>
+                </div>
               ) : null}
             </div>
           </section>

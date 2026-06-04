@@ -120,7 +120,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com"
+                placeholder="user@example.com"
                 required
               />
             </div>
