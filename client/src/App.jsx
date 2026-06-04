@@ -19,6 +19,7 @@ const pages = {
   hod: "hod",
   hr: "hr",
   admin: "admin",
+  status: "status",
 };
 
 const workflowStages = {
@@ -34,7 +35,16 @@ const pageOptions = [
   { key: pages.hod, label: "HOD" },
   { key: pages.hr, label: "HR Review" },
   { key: pages.admin, label: "Admin" },
+  { key: pages.status, label: "My Status" },
 ];
+
+const rolePermissions = {
+  Admin: [pages.admin],
+  HR: [pages.submit, pages.hr],
+  Manager: [pages.manager],
+  HOD: [pages.hod],
+  Employee: [pages.status],
+};
 
 const managerActors = getAllManagers();
 const hodActors = getAllHods();
@@ -462,7 +472,14 @@ function RequestDetailPanel({
           <button
             type="button"
             className="warning-button"
-            onClick={() => onSendToHr(request.id)}
+            onClick={() => {
+              const reason = window.prompt("Please provide a reason for sending back to HR:");
+              if (reason !== null && reason.trim() !== "") {
+                onSendToHr(request.id, role === pages.manager ? "Line Manager" : "HOD", reason);
+              } else if (reason !== null) {
+                alert("A reason is required to send back to HR.");
+              }
+            }}
           >
             HR Review
           </button>
@@ -498,26 +515,55 @@ function App() {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [allUsers, setAllUsers] = useState([
-    { name: "Admin User", email: "admin@example.com", role: "Admin" },
-    { name: "Bharat Sinha", email: "bharat@example.com", role: "Manager" },
-    { name: "Anjali Mehta", email: "anjali@example.com", role: "HOD" },
-    { name: "Priya Sharma", email: "priya@example.com", role: "HR" },
-  ]);
+  const [allUsers, setAllUsers] = useState([]);
+
+  useEffect(() => {
+    if (isAuthenticated && currentUser?.role === "Admin") {
+      fetchUsers();
+    }
+  }, [isAuthenticated, currentUser]);
+
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/users`);
+      const data = await response.json();
+      if (response.ok) {
+        setAllUsers(data.users);
+      }
+    } catch (error) {
+      console.error("Failed to fetch users", error);
+    }
+  };
 
   function showNotice(type, title, message) {
     setNotice({ type, title, message });
   }
 
-  const handleLogin = (email, password) => {
-    // Hardcoded credentials for demonstration
-    if (email === "admin@example.com" && password === "admin123") {
-      setIsAuthenticated(true);
-      setCurrentUser({ name: "Admin User", email: "admin@example.com", role: "Admin" });
-      setCurrentPage(pages.submit);
-      showNotice("success", "Login Successful", "Welcome back, Admin!");
-    } else {
-      showNotice("error", "Login Failed", "Invalid email or password. Hint: admin@example.com / admin123");
+  const handleLogin = async (email, password) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setIsAuthenticated(true);
+        setCurrentUser(data.user);
+        
+        // Set initial page based on role
+        if (data.user.role === "Admin") setCurrentPage(pages.admin);
+        else if (data.user.role === "HR") setCurrentPage(pages.submit);
+        else if (data.user.role === "Manager") setCurrentPage(pages.manager);
+        else if (data.user.role === "HOD") setCurrentPage(pages.hod);
+        else setCurrentPage(pages.status);
+
+        showNotice("success", "Login Successful", `Welcome back, ${data.user.name}!`);
+      } else {
+        showNotice("error", "Login Failed", data.message || "Invalid email or password.");
+      }
+    } catch (error) {
+      showNotice("error", "Error", "Unable to reach the server.");
     }
   };
 
@@ -534,17 +580,80 @@ function App() {
       const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
-        showNotice("success", "Email Sent", data.message || "Instructions sent to your email.");
+        return { success: true, message: data.message };
       } else {
-        showNotice("error", "Failed", data.message || "Unable to send reset email.");
+        return { success: false, message: data.message };
+      }
+    } catch (error) {
+      return { success: false, message: "Unable to reach the server." };
+    }
+  };
+
+  const handleVerifyOtp = async (email, otp) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/verify-otp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, otp }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        return { success: true, message: data.message };
+      } else {
+        return { success: false, message: data.message };
+      }
+    } catch (error) {
+      return { success: false, message: "Unable to reach the server." };
+    }
+  };
+
+  const handleResetPassword = async (email, otp, newPassword) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, otp, password: newPassword }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        return { success: true, message: data.message };
+      } else {
+        return { success: false, message: data.message };
+      }
+    } catch (error) {
+      return { success: false, message: "Unable to reach the server." };
+    }
+  };
+
+  const handleAddUser = async (user) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/create-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(user),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        showNotice("success", "User Created", data.message);
+        fetchUsers(); // Refresh the list
+      } else {
+        showNotice("error", "Failed to Create User", data.message);
       }
     } catch (error) {
       showNotice("error", "Error", "Unable to reach the server.");
     }
-  };
-
-  const handleAddUser = (user) => {
-    setAllUsers([...allUsers, user]);
   };
 
   const handleLogout = () => {
@@ -663,7 +772,11 @@ function App() {
     );
   }
 
-  function handleSendToHr(requestId, actorLabel) {
+  function handleSendToHr(requestId, actorLabel, reason) {
+    if (!reason || !reason.trim()) {
+      showNotice("error", "Required", "Please provide a reason for HR review.");
+      return;
+    }
     updateRequest(
       requestId,
       (request) => ({
@@ -671,6 +784,7 @@ function App() {
         stage: workflowStages.hr,
         lastUpdated: getTodayLabel(),
         reviewRequestedBy: actorLabel,
+        reviewReason: reason,
       }),
       {
         type: "warning",
@@ -783,7 +897,12 @@ function App() {
         </header>
         <main className="app-main">
           <AppNotice notice={notice} onClear={() => setNotice(null)} />
-          <Login onLogin={handleLogin} onForgotPassword={handleForgotPassword} />
+          <Login 
+            onLogin={handleLogin} 
+            onForgotPassword={handleForgotPassword}
+            onVerifyOtp={handleVerifyOtp}
+            onResetPassword={handleResetPassword}
+          />
         </main>
       </div>
     );
@@ -802,7 +921,7 @@ function App() {
 
         <nav className="app-nav">
           {pageOptions
-            .filter((opt) => opt.key !== pages.admin || currentUser?.role === "Admin")
+            .filter((opt) => rolePermissions[currentUser?.role]?.includes(opt.key))
             .map((pageOption) => (
               <button
                 key={pageOption.key}
@@ -836,6 +955,51 @@ function App() {
 
         {currentPage === pages.admin ? (
           <AdminDashboard users={allUsers} onAddUser={handleAddUser} />
+        ) : null}
+
+        {currentPage === pages.status ? (
+          <section className="dashboard-panel">
+            <div className="dashboard-head">
+              <div>
+                <h2>My Onboarding Status</h2>
+                <p>Track the progress of your onboarding request</p>
+              </div>
+            </div>
+            {(() => {
+              const myRequest = requests.find(
+                (r) => r.formData.personalEmail === currentUser.email || r.officialEmail === currentUser.email
+              );
+              if (!myRequest) {
+                return (
+                  <div className="request-empty">
+                    No onboarding request found for your account. Please contact HR if you believe this is an error.
+                  </div>
+                );
+              }
+              const stageMeta = getStageMeta(myRequest.stage);
+              return (
+                <div className="status-container" style={{ padding: "40px", textAlign: "center", background: "#f8fafc", borderRadius: "16px", marginTop: "24px" }}>
+                  <div style={{ marginBottom: "24px" }}>
+                    <span className={`status-pill status-pill-${stageMeta.tone}`} style={{ fontSize: "1.2rem", padding: "12px 24px" }}>
+                      {stageMeta.label}
+                    </span>
+                  </div>
+                  <h3 style={{ fontSize: "1.5rem", color: "#1e293b", marginBottom: "8px" }}>{myRequest.formData.name}</h3>
+                  <p style={{ color: "#64748b", marginBottom: "32px" }}>Request ID: {myRequest.requestCode}</p>
+                  
+                  <div style={{ maxWidth: "500px", margin: "0 auto", textAlign: "left", background: "#ffffff", padding: "24px", borderRadius: "12px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}>
+                    <p style={{ margin: "0 0 16px", color: "#475569" }}>{stageMeta.description}</p>
+                    {myRequest.reviewReason && (
+                      <div style={{ padding: "12px", background: "#fffbeb", borderLeft: "4px solid #f59e0b", color: "#92400e" }}>
+                        <strong>Message from Reviewer:</strong>
+                        <p style={{ margin: "4px 0 0" }}>{myRequest.reviewReason}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </section>
         ) : null}
 
         {currentPage === pages.submit ? (

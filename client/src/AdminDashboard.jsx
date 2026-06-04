@@ -5,7 +5,7 @@ const AdminDashboard = ({ users, onAddUser }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newUser, setNewUser] = useState({ name: "", email: "", role: "Employee" });
+  const [newUser, setNewUser] = useState({ name: "", email: "", role: "Employee", password: "" });
 
   const roles = ["All Roles", "Admin", "Manager", "HOD", "HR", "Employee"];
 
@@ -20,7 +20,7 @@ const AdminDashboard = ({ users, onAddUser }) => {
   const handleAddSubmit = (e) => {
     e.preventDefault();
     onAddUser(newUser);
-    setNewUser({ name: "", email: "", role: "Employee" });
+    setNewUser({ name: "", email: "", role: "Employee", password: "" });
     setShowAddModal(false);
   };
 
@@ -140,6 +140,17 @@ const AdminDashboard = ({ users, onAddUser }) => {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="form-group">
+                  <label>Initial Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    className="dashboard-search"
+                    placeholder="••••••••"
+                  />
                 </div>
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>
                   Create User Account

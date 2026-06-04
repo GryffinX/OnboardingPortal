@@ -94,8 +94,8 @@ ASGI_APPLICATION = "onboarding_backend.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "mssql",
-        "NAME": "OnboardingApp",
-        "HOST": "localhost",
+        "NAME": os.getenv("DB_NAME"),
+        "HOST": os.getenv("DB_HOST"),
         "OPTIONS": {
             "driver": "ODBC Driver 18 for SQL Server",
             "trusted_connection": "yes",
