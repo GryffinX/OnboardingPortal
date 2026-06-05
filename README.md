@@ -18,7 +18,7 @@ A full-stack onboarding management system designed to streamline the employee on
 - **Server**: Gunicorn (Production) / Django Development Server
 
 ### Architecture
-- **Client**: Modular component-based architecture with separated services, constants, and utilities.
+- **Client**: Modular component-based architecture with separated services, constants, and utilities. Features a centralized state hub in `App.jsx` for real-time synchronization across views.
 - **Server**: Modular view package structure (`onboarding/views/`) for clean separation of concerns (Auth, Users, Onboarding, Common).
 
 ## 🛠️ Installation & Setup
@@ -69,3 +69,10 @@ Onboarding-App/
 - `POST /api/delete-user`: Delete a portal user by email.
 - `GET /api/users`: List all portal users.
 - `GET /api/departments`: Fetch available departments.
+
+## ✨ Key Features
+- **Multi-Stage Approval**: Automated routing between HR, Line Managers, and HODs.
+- **Dynamic Asset Tracking**: Mandatory Asset code assignment with uniqueness enforcement.
+- **Smart Auto-Selection**: Automatically selects Manager/HOD for single-reviewer departments.
+- **Universal Intervention**: HR can stop cases at any stage of the active workflow.
+- **Automated Provisioning**: One-click account creation and credential dispatch upon final approval.
