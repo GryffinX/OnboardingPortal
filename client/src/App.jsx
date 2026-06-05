@@ -4,92 +4,32 @@ import HRForm from "./HRForm";
 import Login from "./Login";
 import AdminDashboard from "./AdminDashboard";
 import {
-  employeeInstalledSoftware,
   getAllHods,
   getAllManagers,
   officialEmailDomain,
-  preInstalledSoftware,
 } from "./onboardingData";
 
-const apiBaseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+// Components
+import AppNotice from "./components/AppNotice";
+import SummaryStrip from "./components/SummaryStrip";
+import RequestTable from "./components/RequestTable";
+import SoftwareSection from "./components/SoftwareSection";
+import RequestDetailPanel from "./components/RequestDetailPanel";
 
-const pages = {
-  submit: "submit",
-  manager: "manager",
-  hod: "hod",
-  hr: "hr",
-  admin: "admin",
-  status: "status",
-};
+// Constants & Utils
+import { pages, workflowStages, pageOptions, rolePermissions } from "./constants";
+import {
+  getTodayLabel,
+  buildRequest,
+  getStageMeta,
+  matchesSearch,
+} from "./utils";
 
-const workflowStages = {
-  manager: "manager_review",
-  hod: "hod_review",
-  hr: "hr_review",
-  approved: "approved",
-};
-
-const pageOptions = [
-  { key: pages.submit, label: "Submit Form" },
-  { key: pages.manager, label: "Line Manager" },
-  { key: pages.hod, label: "HOD" },
-  { key: pages.hr, label: "HR Review" },
-  { key: pages.admin, label: "Admin" },
-  { key: pages.status, label: "My Status" },
-];
-
-const rolePermissions = {
-  Admin: [pages.admin],
-  HR: [pages.submit, pages.hr],
-  Manager: [pages.manager],
-  HOD: [pages.hod],
-  Employee: [pages.status],
-};
+// Services
+import { api } from "./services/api";
 
 const managerActors = getAllManagers();
 const hodActors = getAllHods();
-
-function getTodayLabel() {
-  return new Date().toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function normalizeSoftwareList(csvValue) {
-  return csvValue
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function buildRequest(id, formData, overrides = {}) {
-  const submittedAt = overrides.submittedAt || getTodayLabel();
-
-  return {
-    id,
-    requestCode: overrides.requestCode || `ONB-${String(id).padStart(3, "0")}`,
-    formData: {
-      ...formData,
-    },
-    officialEmail: `${formData.officialEmailUser}${officialEmailDomain}`,
-    stage: overrides.stage || workflowStages.manager,
-    submittedAt,
-    lastUpdated: overrides.lastUpdated || submittedAt,
-    additionalSoftware: overrides.additionalSoftware || [],
-    managerSoftware: overrides.managerSoftware || [],
-    hodSoftware: overrides.hodSoftware || [],
-    preInstalledSoftware: overrides.preInstalledSoftware || preInstalledSoftware,
-    employeeInstalledSoftware:
-      overrides.employeeInstalledSoftware || employeeInstalledSoftware,
-    reviewRequestedBy: overrides.reviewRequestedBy || "",
-    reviewReason: overrides.reviewReason || "",
-    revisionCount: overrides.revisionCount || 0,
-    managerApprovedAt: overrides.managerApprovedAt || "",
-    hodApprovedAt: overrides.hodApprovedAt || "",
-  };
-}
 
 const seededRequests = [
   buildRequest(
@@ -150,400 +90,6 @@ const seededRequests = [
   ),
 ];
 
-function getStageMeta(stage) {
-  if (stage === workflowStages.manager) {
-    return {
-      label: "Pending Line Manager",
-      tone: "pending",
-      description: "Waiting for line manager approval",
-    };
-  }
-
-  if (stage === workflowStages.hod) {
-    return {
-      label: "Pending HOD",
-      tone: "hod",
-      description: "Waiting for HOD approval",
-    };
-  }
-
-  if (stage === workflowStages.hr) {
-    return {
-      label: "HR Review",
-      tone: "review",
-      description: "Sent back for HR changes",
-    };
-  }
-
-  return {
-    label: "Approved",
-    tone: "approved",
-    description: "Final approval completed",
-  };
-}
-
-function matchesSearch(request, term) {
-  if (!term.trim()) {
-    return true;
-  }
-
-  const haystack = [
-    request.requestCode,
-    request.formData.name,
-    request.formData.department,
-    request.formData.lineManager,
-    request.formData.hod,
-    request.officialEmail,
-    getStageMeta(request.stage).label,
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(term.trim().toLowerCase());
-}
-
-function AppNotice({ notice, onClear }) {
-  useEffect(() => {
-    if (!notice) return;
-    
-    const timer = setTimeout(() => {
-      onClear();
-    }, 5000);
-
-    return () => clearTimeout(timer);
-  }, [notice, onClear]);
-
-  if (!notice) {
-    return null;
-  }
-
-  return (
-    <div className={`app-notice app-notice-${notice.type}`}>
-      <div className="app-notice-content">
-        <div className="app-notice-text">
-          <strong>{notice.title}</strong>
-          <p>{notice.message}</p>
-        </div>
-        <button type="button" className="ghost-button app-notice-close" onClick={onClear}>
-          ✕
-        </button>
-      </div>
-      <div className="app-notice-progress">
-        <div className="app-notice-progress-bar"></div>
-      </div>
-    </div>
-  );
-}
-
-function SummaryStrip({ requests }) {
-  const managerPending = requests.filter(
-    (request) => request.stage === workflowStages.manager,
-  ).length;
-  const hodPending = requests.filter(
-    (request) => request.stage === workflowStages.hod,
-  ).length;
-  const hrReview = requests.filter(
-    (request) => request.stage === workflowStages.hr,
-  ).length;
-
-  return (
-    <section className="summary-strip">
-      <div className="summary-card">
-        <span>Line Manager Queue</span>
-        <strong>{managerPending}</strong>
-      </div>
-      <div className="summary-card">
-        <span>HOD Queue</span>
-        <strong>{hodPending}</strong>
-      </div>
-      <div className="summary-card">
-        <span>HR Review Queue</span>
-        <strong>{hrReview}</strong>
-      </div>
-    </section>
-  );
-}
-
-function RequestTable({
-  title,
-  subtitle,
-  actorLabel,
-  actorValue,
-  actorOptions,
-  onActorChange,
-  searchTerm,
-  onSearchChange,
-  requests,
-  selectedRequestId,
-  onSelectRequest,
-}) {
-  return (
-    <section className="dashboard-panel">
-      <div className="dashboard-head">
-        <div>
-          <h2>{title}</h2>
-          <p>{subtitle}</p>
-        </div>
-        {actorOptions ? (
-          <label className="dashboard-actor">
-            <span>{actorLabel}</span>
-            <select value={actorValue} onChange={(event) => onActorChange(event.target.value)}>
-              {actorOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
-
-      <div className="dashboard-toolbar">
-        <input
-          className="dashboard-search"
-          type="text"
-          value={searchTerm}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search by request ID, employee, department, or status"
-        />
-      </div>
-
-      <div className="request-table">
-        <div className="request-row request-row-header">
-          <span>Request Details</span>
-          <span>Department</span>
-          <span>Submitted</span>
-          <span>Status</span>
-          <span>Action</span>
-        </div>
-
-        {requests.length === 0 ? (
-          <div className="request-empty">
-            No requests match this dashboard view yet.
-          </div>
-        ) : (
-          requests.map((request) => {
-            const stageMeta = getStageMeta(request.stage);
-
-            return (
-              <div
-                key={request.id}
-                className={`request-row ${selectedRequestId === request.id ? "request-row-active" : ""}`}
-              >
-                <div>
-                  <strong>{request.formData.name}</strong>
-                  <small>{request.requestCode}</small>
-                </div>
-                <span>{request.formData.department}</span>
-                <span>{request.submittedAt}</span>
-                <span className={`status-pill status-pill-${stageMeta.tone}`}>
-                  {stageMeta.label}
-                </span>
-                <button
-                  type="button"
-                  className="table-action"
-                  onClick={() => onSelectRequest(request.id)}
-                >
-                  View Request
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </section>
-  );
-}
-
-function SoftwareSection({ title, tone, items, headerLabel }) {
-  if (!items || items.length === 0) return null;
-  return (
-    <section className={`software-card software-card-${tone}`}>
-      {headerLabel && <div className="software-card-header">{headerLabel}</div>}
-      <div>
-        <h4>{title}</h4>
-        <p>{items.join(", ")}</p>
-      </div>
-    </section>
-  );
-}
-
-function RequestDetailPanel({
-  request,
-  role,
-  onApprove,
-  onSendToHr,
-  onSaveSoftware,
-  onStartHrEdit,
-}) {
-  const [softwareDraft, setSoftwareDraft] = useState("");
-
-  useEffect(() => {
-    // Determine draft based on current role
-    if (role === pages.manager) {
-      setSoftwareDraft(request?.managerSoftware?.join(", ") || "");
-    } else if (role === pages.hod) {
-      setSoftwareDraft(request?.hodSoftware?.join(", ") || "");
-    } else {
-      setSoftwareDraft("");
-    }
-  }, [request, role]);
-
-  if (!request) {
-    return (
-      <aside className="detail-panel">
-        <div className="detail-empty">
-          Select a request to view the complete onboarding details.
-        </div>
-      </aside>
-    );
-  }
-
-  const stageMeta = getStageMeta(request.stage);
-  const isManagerStep = role === pages.manager && request.stage === workflowStages.manager;
-  const isHodStep = role === pages.hod && request.stage === workflowStages.hod;
-  const isHrStep = role === pages.hr && request.stage === workflowStages.hr;
-  const canAct = isManagerStep || isHodStep;
-
-  return (
-    <aside className="detail-panel">
-      <div className="detail-top">
-        <div>
-          <h3>{request.formData.name}</h3>
-          <p>{request.requestCode}</p>
-        </div>
-        <span className={`status-pill status-pill-${stageMeta.tone}`}>
-          {stageMeta.label}
-        </span>
-      </div>
-
-      <div className="detail-grid">
-        <div>
-          <span>Personal Email</span>
-          <strong>{request.formData.personalEmail}</strong>
-        </div>
-        <div>
-          <span>Official Email</span>
-          <strong>{request.officialEmail}</strong>
-        </div>
-        <div>
-          <span>Line Manager</span>
-          <strong>{request.formData.lineManager}</strong>
-        </div>
-        <div>
-          <span>HOD</span>
-          <strong>{request.formData.hod}</strong>
-        </div>
-        <div>
-          <span>Department</span>
-          <strong>{request.formData.department}</strong>
-        </div>
-        <div>
-          <span>Revision Count</span>
-          <strong>{request.revisionCount}</strong>
-        </div>
-      </div>
-
-      <SoftwareSection
-        title="Pre-installed on company laptop"
-        tone="blue"
-        items={request.preInstalledSoftware}
-      />
-
-      <SoftwareSection
-        title="To be installed by employee"
-        tone="yellow"
-        items={request.employeeInstalledSoftware}
-      />
-
-      <SoftwareSection
-        title="Software listed by Line Manager"
-        tone="orange"
-        items={request.managerSoftware}
-        headerLabel={request.formData.lineManager}
-      />
-
-      <SoftwareSection
-        title="Software listed by HOD"
-        tone="black"
-        items={request.hodSoftware}
-        headerLabel={request.formData.hod}
-      />
-
-      {canAct && (
-        <section className="software-input-card">
-          <h4>Add/Edit Software List</h4>
-          <p>
-            {role === pages.manager 
-              ? "List any additional software needed for this employee." 
-              : "Review or add more software to the HOD software list."}
-          </p>
-          <textarea
-            value={softwareDraft}
-            onChange={(event) => setSoftwareDraft(event.target.value)}
-            placeholder="Example: Tableau, Figma, Adobe Acrobat"
-          />
-          <div className="detail-actions detail-actions-compact">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => onSaveSoftware(request.id, normalizeSoftwareList(softwareDraft), role)}
-            >
-              Save My Software List
-            </button>
-          </div>
-        </section>
-      )}
-
-      {request.reviewReason ? (
-        <div className="review-banner" style={{ borderLeft: "4px solid #f59e0b", background: "#fffbeb", color: "#92400e" }}>
-          <strong>Reason for HR Review:</strong>
-          <p style={{ marginTop: "4px" }}>{request.reviewReason}</p>
-          <small style={{ display: "block", marginTop: "8px", opacity: 0.8 }}>Requested by: {request.reviewRequestedBy}</small>
-        </div>
-      ) : null}
-
-      {canAct ? (
-        <div className="detail-actions">
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => onApprove(request.id)}
-          >
-            {role === pages.manager ? "Approve & Send to HOD" : "Approve Request"}
-          </button>
-          <button
-            type="button"
-            className="warning-button"
-            onClick={() => {
-              const reason = window.prompt("Please provide a reason for sending back to HR:");
-              if (reason !== null && reason.trim() !== "") {
-                onSendToHr(request.id, role === pages.manager ? "Line Manager" : "HOD", reason);
-              } else if (reason !== null) {
-                alert("A reason is required to send back to HR.");
-              }
-            }}
-          >
-            HR Review
-          </button>
-        </div>
-      ) : null}
-
-      {isHrStep ? (
-        <div className="detail-actions">
-          <button type="button" className="primary-button" onClick={() => onStartHrEdit(request.id)}>
-            Edit and Re-submit
-          </button>
-        </div>
-      ) : null}
-
-      {!canAct && !isHrStep ? (
-        <p className="detail-note">{stageMeta.description}</p>
-      ) : null}
-    </aside>
-  );
-}
-
 function App() {
   const nextRequestId = useRef(104);
   const [currentPage, setCurrentPage] = useState(pages.submit);
@@ -567,14 +113,11 @@ function App() {
   }, [isAuthenticated, currentUser]);
 
   const fetchUsers = async () => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/users`);
-      const data = await response.json();
-      if (response.ok) {
-        setAllUsers(data.users);
-      }
-    } catch (error) {
-      console.error("Failed to fetch users", error);
+    const { ok, data } = await api.fetchUsers();
+    if (ok) {
+      setAllUsers(data.users);
+    } else {
+      console.error("Failed to fetch users");
     }
   };
 
@@ -583,142 +126,56 @@ function App() {
   }
 
   const handleLogin = async (email, password) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setIsAuthenticated(true);
-        setCurrentUser(data.user);
-        
-        // Set initial page based on role
-        if (data.user.role === "Admin") setCurrentPage(pages.admin);
-        else if (data.user.role === "HR") setCurrentPage(pages.submit);
-        else if (data.user.role === "Manager") setCurrentPage(pages.manager);
-        else if (data.user.role === "HOD") setCurrentPage(pages.hod);
-        else setCurrentPage(pages.status);
+    const { ok, data } = await api.login(email, password);
+    if (ok) {
+      setIsAuthenticated(true);
+      setCurrentUser(data.user);
+      
+      // Set initial page based on role
+      if (data.user.role === "Admin") setCurrentPage(pages.admin);
+      else if (data.user.role === "HR") setCurrentPage(pages.submit);
+      else if (data.user.role === "Manager") setCurrentPage(pages.manager);
+      else if (data.user.role === "HOD") setCurrentPage(pages.hod);
+      else setCurrentPage(pages.status);
 
-        showNotice("success", "Login Successful", `Welcome back, ${data.user.name}!`);
-      } else {
-        showNotice("error", "Login Failed", data.message || "Invalid email or password.");
-      }
-    } catch (error) {
-      showNotice("error", "Error", "Unable to reach the server.");
+      showNotice("success", "Login Successful", `Welcome back, ${data.user.name}!`);
+    } else {
+      showNotice("error", "Login Failed", data.message || "Invalid email or password.");
     }
   };
 
   const handleForgotPassword = async (email) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/forgot-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok) {
-        return { success: true, message: data.message };
-      } else {
-        return { success: false, message: data.message };
-      }
-    } catch (error) {
-      return { success: false, message: "Unable to reach the server." };
-    }
+    const { ok, data } = await api.forgotPassword(email);
+    return { success: ok, message: data.message };
   };
 
   const handleVerifyOtp = async (email, otp) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/verify-otp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, otp }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok) {
-        return { success: true, message: data.message };
-      } else {
-        return { success: false, message: data.message };
-      }
-    } catch (error) {
-      return { success: false, message: "Unable to reach the server." };
-    }
+    const { ok, data } = await api.verifyOtp(email, otp);
+    return { success: ok, message: data.message };
   };
 
   const handleResetPassword = async (email, otp, newPassword) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/reset-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, otp, password: newPassword }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok) {
-        return { success: true, message: data.message };
-      } else {
-        return { success: false, message: data.message };
-      }
-    } catch (error) {
-      return { success: false, message: "Unable to reach the server." };
-    }
+    const { ok, data } = await api.resetPassword(email, otp, newPassword);
+    return { success: ok, message: data.message };
   };
 
   const handleAddUser = async (user) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/create-user`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(user),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok) {
-        showNotice("success", "User Created", data.message);
-        fetchUsers(); // Refresh the list
-      } else {
-        showNotice("error", "Failed to Create User", data.message);
-      }
-    } catch (error) {
-      showNotice("error", "Error", "Unable to reach the server.");
+    const { ok, data } = await api.createUser(user);
+    if (ok) {
+      showNotice("success", "User Created", data.message);
+      fetchUsers(); // Refresh the list
+    } else {
+      showNotice("error", "Failed to Create User", data.message);
     }
   };
 
   const handleUpdateUser = async (user) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/update-user`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(user),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok) {
-        showNotice("success", "User Updated", data.message);
-        fetchUsers(); // Refresh the list
-      } else {
-        showNotice("error", "Failed to Update User", data.message);
-      }
-    } catch (error) {
-      showNotice("error", "Error", "Unable to reach the server.");
+    const { ok, data } = await api.updateUser(user);
+    if (ok) {
+      showNotice("success", "User Updated", data.message);
+      fetchUsers(); // Refresh the list
+    } else {
+      showNotice("error", "Failed to Update User", data.message);
     }
   };
 
@@ -730,35 +187,18 @@ function App() {
   };
 
   async function sendOnboardingMail(formData) {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/onboarding-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        return {
-          ok: false,
-          message: payload.message || "Unable to submit the form.",
-          errors: payload.errors || {},
-        };
-      }
-
-      return {
-        ok: true,
-        message: payload.message || "Mail sent successfully",
-      };
-    } catch {
+    const { ok, data } = await api.sendOnboardingMail(formData);
+    if (!ok) {
       return {
         ok: false,
-        message: "Unable to reach the mail service.",
+        message: data.message || "Unable to submit the form.",
+        errors: data.errors || {},
       };
     }
+    return {
+      ok: true,
+      message: data.message || "Mail sent successfully",
+    };
   }
 
   function addRequest(formData) {
@@ -823,43 +263,33 @@ function App() {
     const request = requests.find(r => r.id === requestId);
     if (!request) return;
 
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/finalize-onboarding`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: request.formData.name,
-          email: request.formData.personalEmail,
-          department: request.formData.department
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        showNotice("error", "Automation Failed", data.message || "Failed to create user account.");
-        return;
-      }
-      
-      updateRequest(
-        requestId,
-        (req) => ({
-          ...req,
-          stage: workflowStages.approved,
-          lastUpdated: getTodayLabel(),
-          hodApprovedAt: getTodayLabel(),
-          reviewRequestedBy: "",
-        }),
-        {
-          type: "success",
-          title: "Request fully approved",
-          message: (req) =>
-            `${req.formData.name} has completed onboarding. ${data.password ? `Default Password: ${data.password}` : ""}`,
-        },
-      );
-    } catch (err) {
-      showNotice("error", "Network Error", "Unable to reach the server to finalize onboarding.");
+    const { ok, data } = await api.finalizeOnboarding({
+      name: request.formData.name,
+      email: request.formData.personalEmail,
+      department: request.formData.department
+    });
+    
+    if (!ok) {
+      showNotice("error", "Automation Failed", data.message || "Failed to create user account.");
+      return;
     }
+    
+    updateRequest(
+      requestId,
+      (req) => ({
+        ...req,
+        stage: workflowStages.approved,
+        lastUpdated: getTodayLabel(),
+        hodApprovedAt: getTodayLabel(),
+        reviewRequestedBy: "",
+      }),
+      {
+        type: "success",
+        title: "Request fully approved",
+        message: (req) =>
+          `${req.formData.name} has completed onboarding. ${data.password ? `Default Password: ${data.password}` : ""}`,
+      },
+    );
   }
 
   function handleSendToHr(requestId, actorLabel, reason) {
@@ -1050,7 +480,7 @@ function App() {
         <AppNotice notice={notice} onClear={() => setNotice(null)} />
 
         {currentPage === pages.admin ? (
-          <AdminDashboard users={allUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} apiBaseUrl={apiBaseUrl} />
+          <AdminDashboard users={allUsers} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} apiBaseUrl={api.getBaseUrl()} />
         ) : null}
 
         {currentPage === pages.status ? (
@@ -1121,7 +551,7 @@ function App() {
             onSuccess={addRequest}
             successPrimaryMessage="Successfully submitted."
             subtitle="Create a new onboarding request. It will enter the line manager queue first, then move to HOD approval."
-            apiBaseUrl={apiBaseUrl}
+            apiBaseUrl={api.getBaseUrl()}
           />
         ) : null}
 
@@ -1228,7 +658,7 @@ function App() {
                         onCancel={handleHrEditCancel}
                         resetOnSuccess={false}
                         embedded
-                        apiBaseUrl={apiBaseUrl}
+                        apiBaseUrl={api.getBaseUrl()}
                       />
                     </div>
                   </div>
