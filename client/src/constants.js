@@ -12,6 +12,7 @@ export const workflowStages = {
   hod: "hod_review",
   hr: "hr_review",
   approved: "approved",
+  stopped: "stopped",
 };
 
 export const pageOptions = [
@@ -25,7 +26,6 @@ export const pageOptions = [
 
 export const rolePermissions = {
   Admin: [pages.admin],
-  HR: [pages.submit, pages.hr],
   Manager: [pages.manager],
   HOD: [pages.hod],
   Employee: [pages.status],

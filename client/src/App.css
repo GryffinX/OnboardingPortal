@@ -191,6 +191,28 @@
   align-items: start;
 }
 
+.workflow-board-shell {
+  margin-bottom: 20px;
+}
+
+.workflow-bucket-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.workflow-bucket-grid .dashboard-panel {
+  margin: 0;
+}
+
+.workflow-bucket-grid .request-table {
+  max-height: 620px;
+}
+
+.workflow-bucket-grid .request-rows {
+  max-height: 520px;
+}
+
 .dashboard-panel,
 .detail-panel {
   background: #ffffff;
@@ -249,8 +271,14 @@
   border: 1px solid #e2e8f0;
   border-radius: 20px;
   overflow: hidden;
+  /* allow inner scrolling when lists grow */
+  max-height: 520px;
 }
 
+.request-table .request-rows {
+  max-height: 420px;
+  overflow: auto;
+}
 .request-row {
   display: grid;
   grid-template-columns: 2.1fr 1fr 1fr 1.1fr 1fr;
@@ -376,6 +404,11 @@
 .status-pill-approved {
   background: #dcfce7;
   color: #166534;
+}
+
+.status-pill-stopped {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .detail-top {
@@ -569,6 +602,10 @@
   .dashboard-layout {
     grid-template-columns: 1fr;
   }
+
+  .workflow-bucket-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 900px) {
@@ -628,4 +665,15 @@
     flex-direction: column;
     padding: 18px 18px 0;
   }
+}
+
+.loading-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  width: 100%;
+  font-size: 1.2rem;
+  color: #64748b;
+  font-weight: 500;
 }

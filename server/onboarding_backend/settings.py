@@ -46,7 +46,22 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
-CORS_ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "*")
+_cors_origin_value = os.getenv("ALLOWED_ORIGINS", "")
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in _cors_origin_value.split(",")
+    if origin.strip()
+]
+
+if not CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 TEST_RECIPIENT = os.getenv("TEST_RECIPIENT", "g.ayush2k07@gmail.com")
 OFFICIAL_DOMAIN = "@securitas-india.com"
 
@@ -61,6 +76,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "onboarding_backend.middleware.SimpleCORSMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -68,7 +84,6 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "onboarding_backend.middleware.SimpleCORSMiddleware",
 ]
 
 ROOT_URLCONF = "onboarding_backend.urls"
@@ -121,3 +136,10 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("GMAIL_SENDER", "")
 EMAIL_HOST_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 EMAIL_TIMEOUT = 30
+
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)
+SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "0" if DEBUG else "31536000"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG)
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", not DEBUG)
+SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", not DEBUG)

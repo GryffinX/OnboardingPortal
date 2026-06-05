@@ -11,6 +11,33 @@ from ..models import PasswordResetOTP, UserProfile, Department
 from .utils import generate_otp, PERSONAL_EMAIL_REGEX
 
 
+def normalize_role(role):
+    if not isinstance(role, str):
+        return "Employee"
+
+    canonical_roles = {
+        "admin": "Admin",
+        "manager": "Manager",
+        "hod": "HOD",
+        "employee": "Employee",
+    }
+
+    return canonical_roles.get(role.strip().lower(), "Employee")
+
+
+def resolve_user_role_and_department(user):
+    role = "Admin" if user.is_staff or user.is_superuser else "Employee"
+    department_name = ""
+
+    try:
+        role = normalize_role(user.profile.role or role)
+        department_name = user.profile.department.name if user.profile.department else ""
+    except UserProfile.DoesNotExist:
+        pass
+
+    return role, department_name
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def forgot_password(request):
@@ -107,14 +134,8 @@ def login_view(request):
             user = None
 
     if user is not None:
-        role = "Employee"
-        department_name = ""
-        try:
-            role = user.profile.role
-            department_name = user.profile.department.name if user.profile.department else ""
-        except UserProfile.DoesNotExist:
-            pass
-            
+        role, department_name = resolve_user_role_and_department(user)
+
         return JsonResponse({
             "message": "Login successful",
             "user": {

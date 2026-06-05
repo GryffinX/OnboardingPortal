@@ -12,7 +12,12 @@ class SimpleCORSMiddleware:
         else:
             response = self.get_response(request)
 
-        allowed_origin = settings.CORS_ALLOWED_ORIGIN
+        request_origin = request.headers.get("Origin", "")
+        allowed_origin = "*"
+
+        if request_origin and request_origin in getattr(settings, "CORS_ALLOWED_ORIGINS", []):
+            allowed_origin = request_origin
+
         response["Access-Control-Allow-Origin"] = allowed_origin
         response["Access-Control-Allow-Headers"] = "Content-Type"
         response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"

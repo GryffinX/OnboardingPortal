@@ -8,6 +8,33 @@ from django.contrib.auth.models import User
 from ..models import UserProfile, Department
 
 
+def normalize_role(role):
+    if not isinstance(role, str):
+        return "Employee"
+
+    canonical_roles = {
+        "admin": "Admin",
+        "manager": "Manager",
+        "hod": "HOD",
+        "employee": "Employee",
+    }
+
+    return canonical_roles.get(role.strip().lower(), "Employee")
+
+
+def resolve_user_role_and_department(user):
+    role = "Admin" if user.is_staff or user.is_superuser else "Employee"
+    department_name = ""
+
+    try:
+        role = normalize_role(user.profile.role or role)
+        department_name = user.profile.department.name if user.profile.department else ""
+    except UserProfile.DoesNotExist:
+        pass
+
+    return role, department_name
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_user(request):
@@ -18,7 +45,7 @@ def create_user(request):
 
     name = (payload.get("name") or "").strip()
     email = (payload.get("email") or "").strip()
-    role = (payload.get("role") or "Employee").strip()
+    role = normalize_role(payload.get("role") or "Employee")
     department_name = (payload.get("department") or "").strip()
     password = (payload.get("password") or "").strip()
 
@@ -124,7 +151,7 @@ def update_user(request):
         
         profile, created = UserProfile.objects.get_or_create(user=user)
         if role:
-            profile.role = role
+            profile.role = normalize_role(role)
         if department_name:
             dept = Department.objects.filter(name=department_name).first()
             profile.department = dept
@@ -151,13 +178,7 @@ def get_users(request):
     users = User.objects.all().select_related('profile', 'profile__department')
     user_list = []
     for user in users:
-        role = "Employee"
-        department_name = ""
-        try:
-            role = user.profile.role
-            department_name = user.profile.department.name if user.profile.department else ""
-        except UserProfile.DoesNotExist:
-            pass
+        role, department_name = resolve_user_role_and_department(user)
             
         user_list.append({
             "name": f"{user.first_name} {user.last_name}".strip() or user.username,
@@ -166,3 +187,26 @@ def get_users(request):
             "department": department_name
         })
     return JsonResponse({"users": user_list})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def delete_user(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"message": "Invalid JSON payload."}, status=400)
+
+    email = payload.get("email")
+
+    if not email:
+        return JsonResponse({"message": "Email is required to identify user."}, status=400)
+
+    try:
+        user = User.objects.get(email=email)
+        user.delete()
+        return JsonResponse({"message": "User deleted successfully."})
+    except User.DoesNotExist:
+        return JsonResponse({"message": "User not found."}, status=404)
+    except Exception as exc:
+        return JsonResponse({"message": f"Error deleting user: {str(exc)}"}, status=500)

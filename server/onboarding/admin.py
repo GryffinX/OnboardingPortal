@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import PasswordResetOTP, UserProfile, Department
+from .models import PasswordResetOTP, UserProfile, Department, SoftwareCatalogItem
 
 @admin.register(PasswordResetOTP)
 class PasswordResetOTPAdmin(admin.ModelAdmin):
@@ -21,3 +21,11 @@ class UserProfileAdmin(admin.ModelAdmin):
 class DepartmentAdmin(admin.ModelAdmin):
     list_display = ("name",)
     search_fields = ("name",)
+
+
+@admin.register(SoftwareCatalogItem)
+class SoftwareCatalogItemAdmin(admin.ModelAdmin):
+    list_display = ("name", "category", "is_active", "sort_order")
+    list_filter = ("category", "is_active")
+    search_fields = ("name",)
+    ordering = ("category", "sort_order", "name")

@@ -1,9 +1,5 @@
 import { workflowStages } from "./constants";
-import {
-  employeeInstalledSoftware,
-  officialEmailDomain,
-  preInstalledSoftware,
-} from "./onboardingData";
+import { officialEmailDomain } from "./onboardingData";
 
 export function getTodayLabel() {
   return new Date().toLocaleDateString("en-GB", {
@@ -20,6 +16,32 @@ export function normalizeSoftwareList(csvValue) {
     .filter(Boolean);
 }
 
+export function normalizeSoftwareItems(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [...fallback];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item).trim()).filter(Boolean);
+      }
+    } catch {
+      return normalizeSoftwareList(trimmed);
+    }
+
+    return normalizeSoftwareList(trimmed);
+  }
+
+  return [...fallback];
+}
+
 export function buildRequest(id, formData, overrides = {}) {
   const submittedAt = overrides.submittedAt || getTodayLabel();
 
@@ -29,21 +51,94 @@ export function buildRequest(id, formData, overrides = {}) {
     formData: {
       ...formData,
     },
-    officialEmail: `${formData.officialEmailUser}${officialEmailDomain}`,
+    officialEmail: `${formData.officialEmailUser}${overrides.officialEmailDomain || officialEmailDomain}`,
     stage: overrides.stage || workflowStages.manager,
     submittedAt,
     lastUpdated: overrides.lastUpdated || submittedAt,
-    additionalSoftware: overrides.additionalSoftware || [],
-    managerSoftware: overrides.managerSoftware || [],
-    hodSoftware: overrides.hodSoftware || [],
-    preInstalledSoftware: overrides.preInstalledSoftware || preInstalledSoftware,
-    employeeInstalledSoftware:
-      overrides.employeeInstalledSoftware || employeeInstalledSoftware,
+    additionalSoftware: normalizeSoftwareItems(overrides.additionalSoftware),
+    managerSoftware: normalizeSoftwareItems(overrides.managerSoftware),
+    hodSoftware: normalizeSoftwareItems(overrides.hodSoftware),
+    preInstalledSoftware: normalizeSoftwareItems(overrides.preInstalledSoftware),
+    employeeInstalledSoftware: normalizeSoftwareItems(overrides.employeeInstalledSoftware),
+    assetCode: overrides.assetCode || "",
+    hodComment: overrides.hodComment || "",
+    stopReason: overrides.stopReason || "",
     reviewRequestedBy: overrides.reviewRequestedBy || "",
     reviewReason: overrides.reviewReason || "",
     revisionCount: overrides.revisionCount || 0,
     managerApprovedAt: overrides.managerApprovedAt || "",
     hodApprovedAt: overrides.hodApprovedAt || "",
+  };
+}
+
+export function normalizeRequestRecord(request, fallbackId = 0) {
+  const requestCode =
+    request?.requestCode ||
+    request?.request_code ||
+    `ONB-${String(fallbackId || 0).padStart(3, "0")}`;
+  const normalizedId = Number(request?.id) || fallbackId || 0;
+  const sourceFormData = request?.formData || request?.form_data || {};
+  const officialEmail =
+    request?.officialEmail ||
+    request?.official_email ||
+    "";
+  const officialEmailUser =
+    sourceFormData.officialEmailUser ||
+    sourceFormData.official_email_user ||
+    (officialEmail.includes("@") ? officialEmail.split("@")[0] : "");
+
+  const formData = {
+    name: sourceFormData.name || request?.employee_name || "",
+    personalEmail:
+      sourceFormData.personalEmail ||
+      sourceFormData.personal_email ||
+      request?.personal_email ||
+      "",
+    officialEmailUser,
+    department: sourceFormData.department || request?.department || "",
+    lineManager:
+      sourceFormData.lineManager ||
+      sourceFormData.line_manager ||
+      request?.line_manager ||
+      "",
+    hod: sourceFormData.hod || request?.hod || "",
+  };
+
+  const normalizedRequest = buildRequest(normalizedId, formData, {
+    requestCode,
+    stage: request?.stage,
+    submittedAt: request?.submittedAt || request?.submitted_at,
+    lastUpdated: request?.lastUpdated || request?.last_updated,
+    additionalSoftware: normalizeSoftwareItems(request?.additionalSoftware),
+    managerSoftware: normalizeSoftwareItems(
+      request?.managerSoftware || request?.manager_software,
+    ),
+    hodSoftware: normalizeSoftwareItems(
+      request?.hodSoftware || request?.hod_software,
+    ),
+    preInstalledSoftware: normalizeSoftwareItems(
+      request?.preInstalledSoftware || request?.pre_installed_software,
+    ),
+    employeeInstalledSoftware: normalizeSoftwareItems(
+      request?.employeeInstalledSoftware || request?.employee_installed_software,
+    ),
+    assetCode: request?.assetCode || request?.asset_code || "",
+    hodComment: request?.hodComment || request?.hod_comment || "",
+    stopReason: request?.stopReason || request?.stop_reason || "",
+    reviewRequestedBy: request?.reviewRequestedBy || request?.review_requested_by,
+    reviewReason: request?.reviewReason || request?.review_reason,
+    revisionCount: request?.revisionCount || request?.revision_count,
+    managerApprovedAt: request?.managerApprovedAt || request?.manager_approved_at,
+    hodApprovedAt: request?.hodApprovedAt || request?.hod_approved_at,
+  });
+
+  const resolvedOfficialEmail = officialEmailUser
+    ? `${officialEmailUser}${request?.officialEmailDomain || officialEmailDomain}`
+    : officialEmail;
+
+  return {
+    ...normalizedRequest,
+    officialEmail: resolvedOfficialEmail,
   };
 }
 
@@ -72,6 +167,14 @@ export function getStageMeta(stage) {
     };
   }
 
+  if (stage === workflowStages.stopped) {
+    return {
+      label: "Stopped",
+      tone: "stopped",
+      description: "Workflow cancelled by HR",
+    };
+  }
+
   return {
     label: "Approved",
     tone: "approved",
@@ -86,11 +189,15 @@ export function matchesSearch(request, term) {
 
   const haystack = [
     request.requestCode,
-    request.formData.name,
-    request.formData.department,
-    request.formData.lineManager,
-    request.formData.hod,
+    request.formData?.name,
+    request.formData?.department,
+    request.formData?.lineManager,
+    request.formData?.hod,
+    request.assetCode,
     request.officialEmail,
+    request.reviewReason,
+    request.hodComment,
+    request.stopReason,
     getStageMeta(request.stage).label,
   ]
     .join(" ")

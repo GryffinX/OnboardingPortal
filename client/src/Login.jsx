@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import "./Login.css";
 
 const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
@@ -34,7 +34,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
       } else {
         showMessage(result.message || "Failed to send OTP. Please try again.");
       }
-    } catch (err) {
+    } catch {
       showMessage("An unexpected error occurred.");
     } finally {
       setLoading(false);
@@ -53,7 +53,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
       } else {
         showMessage(result.message || "Invalid or expired OTP.");
       }
-    } catch (err) {
+    } catch {
       showMessage("An unexpected error occurred.");
     } finally {
       setLoading(false);
@@ -80,7 +80,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
       } else {
         showMessage(result.message || "Failed to reset password.");
       }
-    } catch (err) {
+    } catch {
       showMessage("An unexpected error occurred.");
     } finally {
       setLoading(false);

@@ -58,6 +58,7 @@ export default function HRForm({
   resetOnSuccess = true,
   embedded = false,
   apiBaseUrl = "http://127.0.0.1:8000",
+  officialEmailDomain: explicitOfficialEmailDomain = officialEmailDomain,
 }) {
   const [formData, setFormData] = useState(() => mergeFormData(initialData));
   const [errors, setErrors] = useState({});
@@ -91,40 +92,23 @@ export default function HRForm({
     .filter(u => u.role === "HOD" && u.department === formData.department)
     .map(u => u.name);
 
-  useEffect(() => {
-    if (managerOptions.length === 1 && formData.lineManager === "") {
-      setFormData(prev => ({ ...prev, lineManager: managerOptions[0] }));
-    }
-  }, [managerOptions, formData.lineManager]);
-
-  useEffect(() => {
-    if (hodOptions.length === 1 && formData.hod === "") {
-      setFormData(prev => ({ ...prev, hod: hodOptions[0] }));
-    }
-  }, [hodOptions, formData.hod]);
-
-  useEffect(() => {
-    setFormData(mergeFormData(initialData));
-  }, [initialData]);
-
-  useEffect(() => {
-    setIsSubmitting(false);
-    setSubmitState({
-      type: "",
-      mailMessage: "",
-    });
-  }, [initialData]);
-
   function handleChange(event) {
     const { name, value } = event.target;
 
     setFormData((prevFormData) => {
       if (name === "department") {
+        const nextManagers = staff
+          .filter(u => u.role === "Manager" && u.department === value)
+          .map(u => u.name);
+        const nextHods = staff
+          .filter(u => u.role === "HOD" && u.department === value)
+          .map(u => u.name);
+
         return {
           ...prevFormData,
           department: value,
-          lineManager: "",
-          hod: "",
+          lineManager: nextManagers.length === 1 ? nextManagers[0] : "",
+          hod: nextHods.length === 1 ? nextHods[0] : "",
         };
       }
 
@@ -147,7 +131,13 @@ export default function HRForm({
   async function handleSubmit(event) {
     event.preventDefault();
 
-    const nextErrors = validateForm(formData);
+    const resolvedFormData = {
+      ...formData,
+      lineManager: formData.lineManager || (managerOptions.length === 1 ? managerOptions[0] : ""),
+      hod: formData.hod || (hodOptions.length === 1 ? hodOptions[0] : ""),
+    };
+
+    const nextErrors = validateForm(resolvedFormData);
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -162,7 +152,7 @@ export default function HRForm({
 
     try {
       const payload = onSubmitForm
-        ? await onSubmitForm(formData)
+        ? await onSubmitForm(resolvedFormData)
         : { ok: false, message: "No submit handler is configured for this form." };
 
       if (!payload?.ok) {
@@ -187,7 +177,7 @@ export default function HRForm({
       }
 
       setErrors({});
-      onSuccess?.(formData, payload);
+      onSuccess?.(resolvedFormData, payload);
     } catch {
       setSubmitState({
         type: "error",
@@ -275,7 +265,7 @@ export default function HRForm({
                   autoComplete="off"
                 />
                 <span className="hr-form-email-domain">
-                  {officialEmailDomain}
+                  {explicitOfficialEmailDomain}
                 </span>
               </div>
               {errors.officialEmail ? (

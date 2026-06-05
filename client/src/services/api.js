@@ -43,7 +43,7 @@ export const api = {
 
   async fetchUsers() {
     const response = await fetch(`${apiBaseUrl}/api/users`);
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
@@ -67,6 +67,16 @@ export const api = {
     return { ok: response.ok, data };
   },
 
+  async deleteUser(email) {
+    const response = await fetch(`${apiBaseUrl}/api/delete-user`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
   async sendOnboardingMail(formData) {
     const response = await fetch(`${apiBaseUrl}/api/onboarding-email`, {
       method: "POST",
@@ -83,7 +93,39 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestData)
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async fetchRequests() {
+    const response = await fetch(`${apiBaseUrl}/api/requests`);
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async fetchWorkflowOptions() {
+    const response = await fetch(`${apiBaseUrl}/api/workflow-options`);
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async createSoftwareItem(name, category) {
+    const response = await fetch(`${apiBaseUrl}/api/create-software-item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, category }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async saveRequest(request) {
+    const response = await fetch(`${apiBaseUrl}/api/save-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
   

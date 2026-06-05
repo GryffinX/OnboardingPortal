@@ -1,4 +1,4 @@
-import { getStageMeta } from "../utils";
+import { getStageMeta, matchesSearch } from "../utils";
 
 function RequestTable({
   title,
@@ -12,6 +12,7 @@ function RequestTable({
   requests,
   selectedRequestId,
   onSelectRequest,
+  showSearch = true,
 }) {
   return (
     <section className="dashboard-panel">
@@ -34,15 +35,17 @@ function RequestTable({
         ) : null}
       </div>
 
-      <div className="dashboard-toolbar">
-        <input
-          className="dashboard-search"
-          type="text"
-          value={searchTerm}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search by request ID, employee, department, or status"
-        />
-      </div>
+      {showSearch ? (
+        <div className="dashboard-toolbar">
+          <input
+            className="dashboard-search"
+            type="text"
+            value={searchTerm}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search by request ID, employee, department, or status"
+          />
+        </div>
+      ) : null}
 
       <div className="request-table">
         <div className="request-row request-row-header">
@@ -52,13 +55,15 @@ function RequestTable({
           <span>Status</span>
           <span>Action</span>
         </div>
-
+        <div className="request-rows">
         {requests.length === 0 ? (
           <div className="request-empty">
             No requests match this dashboard view yet.
           </div>
         ) : (
-          requests.map((request) => {
+          requests
+            .filter((r) => matchesSearch(r, searchTerm || ""))
+            .map((request) => {
             const stageMeta = getStageMeta(request.stage);
 
             return (
@@ -86,6 +91,7 @@ function RequestTable({
             );
           })
         )}
+        </div>
       </div>
     </section>
   );
