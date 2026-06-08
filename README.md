@@ -1,4 +1,4 @@
-# Onboarding-App
+# Onboarding-Portal
 
 A full-stack onboarding management system designed to streamline the employee onboarding process through a multi-stage approval workflow.
 
