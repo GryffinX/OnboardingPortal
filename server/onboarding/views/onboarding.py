@@ -242,23 +242,15 @@ def get_next_employee_code():
     import re
     from ..models import UserProfile
     profiles = UserProfile.objects.exclude(employee_code__isnull=True).exclude(employee_code='')
-    max_num = 0
-    prefix = "SEC-"
-    digits_length = 3
+    max_num = 999
     for p in profiles:
-        match = re.search(r"(\d+)$", p.employee_code)
+        match = re.search(r"^(\d{4,})$", p.employee_code)
         if match:
-            num_str = match.group(1)
-            num = int(num_str)
+            num = int(match.group(1))
             if num > max_num:
                 max_num = num
-                prefix = p.employee_code[:match.start()]
-                digits_length = len(num_str)
     
-    if max_num == 0:
-        return "SEC-001"
-    
-    return f"{prefix}{str(max_num + 1).zfill(digits_length)}"
+    return str(max_num + 1)
 
 @csrf_exempt
 @require_http_methods(["POST"])

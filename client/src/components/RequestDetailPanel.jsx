@@ -238,7 +238,7 @@ function RequestDetailPanel({
                 className="dashboard-search"
                 value={adminEmpCodeDraft}
                 onChange={(e) => setAdminEmpCodeDraft(e.target.value)}
-                placeholder="SEC-XXX"
+                placeholder="XXX"
               />
             </div>
             <div className="form-group">
