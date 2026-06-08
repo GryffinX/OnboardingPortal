@@ -2,7 +2,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 82px); /* Subtracting header height approximately */
+  min-height: calc(100vh - 62px); /* Subtracting header height approximately */
   padding: 24px;
 }
 

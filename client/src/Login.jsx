@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./Login.css";
+import { validateEmail } from "./utils";
 
 const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
   const [email, setEmail] = useState("");
@@ -13,17 +14,31 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
   const showMessage = (text, type = "error") => {
     setMessage({ text, type });
     if (type === "success") {
-      setTimeout(() => setMessage(null), 5000);
+      setTimeout(() => setMessage(null), 1500);
     }
   };
 
   const handleLoginSubmit = (e) => {
     e.preventDefault();
+    const emailError = validateEmail(email);
+    if (emailError) {
+      showMessage(emailError);
+      return;
+    }
+    if (!password) {
+      showMessage("Password is required.");
+      return;
+    }
     onLogin(email, password);
   };
 
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
+    const emailError = validateEmail(email);
+    if (emailError) {
+      showMessage(emailError);
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
@@ -43,6 +58,10 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
 
   const handleOtpSubmit = async (e) => {
     e.preventDefault();
+    if (!/^\d{6}$/.test(otp)) {
+      showMessage("OTP must be exactly 6 digits.");
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
@@ -62,6 +81,10 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
 
   const handleResetSubmit = async (e) => {
     e.preventDefault();
+    if (password.length < 8) {
+      showMessage("Password must be at least 8 characters long.");
+      return;
+    }
     if (password !== confirmPassword) {
       showMessage("Passwords do not match.");
       return;

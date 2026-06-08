@@ -1,5 +1,4 @@
 import { workflowStages } from "./constants";
-import { officialEmailDomain } from "./onboardingData";
 
 export function getTodayLabel() {
   return new Date().toLocaleDateString("en-GB", {
@@ -48,10 +47,13 @@ export function buildRequest(id, formData, overrides = {}) {
   return {
     id,
     requestCode: overrides.requestCode || `ONB-${String(id).padStart(3, "0")}`,
+    employeeCode: overrides.employeeCode || "",
     formData: {
       ...formData,
+      lineManagerCode: overrides.lineManagerCode || "",
+      hodCode: overrides.hodCode || "",
     },
-    officialEmail: `${formData.officialEmailUser}${overrides.officialEmailDomain || officialEmailDomain}`,
+    officialEmail: `${formData.officialEmailUser}${overrides.officialEmailDomain || ""}`,
     stage: overrides.stage || workflowStages.manager,
     submittedAt,
     lastUpdated: overrides.lastUpdated || submittedAt,
@@ -69,6 +71,37 @@ export function buildRequest(id, formData, overrides = {}) {
     managerApprovedAt: overrides.managerApprovedAt || "",
     hodApprovedAt: overrides.hodApprovedAt || "",
   };
+}
+
+export function validateName(name) {
+  if (!name) return "Name is required.";
+  if (name.length < 3 || name.length > 50) return "Name must be between 3 and 50 characters.";
+  if (name.startsWith(" ") || name.endsWith(" ")) return "Name cannot start or end with a space.";
+  if (name.includes("  ")) return "Name cannot contain double spaces.";
+  if (!/^[a-zA-Z ]+$/.test(name)) return "Name can only contain letters and spaces.";
+  return null;
+}
+
+export function validateEmail(email) {
+  if (!email) return "Email is required.";
+  if (email.length > 100) return "Email must be less than 100 characters.";
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!regex.test(email)) return "Enter a valid email address.";
+  return null;
+}
+
+export function validateEmployeePhoneNumber(num) {
+  if (!num) return "Employee phone number is required.";
+  if (!/^\d+$/.test(num)) return "Employee phone number must contain only digits.";
+  if (num.length !== 10) return "Employee phone number must be exactly 10 digits.";
+  return null;
+}
+
+export function validateGenericInput(value, fieldName) {
+  if (!value) return `${fieldName} is required.`;
+  if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
+  if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
+  return null;
 }
 
 export function normalizeRequestRecord(request, fallbackId = 0) {
@@ -89,6 +122,7 @@ export function normalizeRequestRecord(request, fallbackId = 0) {
 
   const formData = {
     name: sourceFormData.name || request?.employee_name || "",
+    employeePhoneNumber: sourceFormData.employeePhoneNumber || sourceFormData.employee_phone_number || request?.employee_phone_number || "",
     personalEmail:
       sourceFormData.personalEmail ||
       sourceFormData.personal_email ||
@@ -106,6 +140,9 @@ export function normalizeRequestRecord(request, fallbackId = 0) {
 
   const normalizedRequest = buildRequest(normalizedId, formData, {
     requestCode,
+    employeeCode: request?.employeeCode || request?.employee_code || "",
+    lineManagerCode: sourceFormData.lineManagerCode || request?.line_manager_code || "",
+    hodCode: sourceFormData.hodCode || request?.hod_code || "",
     stage: request?.stage,
     submittedAt: request?.submittedAt || request?.submitted_at,
     lastUpdated: request?.lastUpdated || request?.last_updated,
@@ -133,7 +170,7 @@ export function normalizeRequestRecord(request, fallbackId = 0) {
   });
 
   const resolvedOfficialEmail = officialEmailUser
-    ? `${officialEmailUser}${request?.officialEmailDomain || officialEmailDomain}`
+    ? `${officialEmailUser}${request?.officialEmailDomain || ""}`
     : officialEmail;
 
   return {
@@ -189,6 +226,7 @@ export function matchesSearch(request, term) {
 
   const haystack = [
     request.requestCode,
+    request.employeeCode,
     request.formData?.name,
     request.formData?.department,
     request.formData?.lineManager,
@@ -204,4 +242,31 @@ export function matchesSearch(request, term) {
     .toLowerCase();
 
   return haystack.includes(term.trim().toLowerCase());
+}
+
+export function getInitialFormData() {
+  return {
+    name: "",
+    employeePhoneNumber: "",
+    personalEmail: "",
+    officialEmailUser: "",
+    department: "",
+    lineManager: "",
+    hod: "",
+  };
+}
+
+export function normalizeRole(role) {
+  if (typeof role !== "string") {
+    return "Employee";
+  }
+
+  const canonicalRoles = {
+    admin: "Admin",
+    manager: "Manager",
+    hod: "HOD",
+    employee: "Employee",
+  };
+
+  return canonicalRoles[role.trim().toLowerCase()] || "Employee";
 }

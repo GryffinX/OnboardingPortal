@@ -1,27 +1,25 @@
 import { useEffect, useState } from "react";
 import "./HRForm.css";
-import {
-  getInitialFormData,
-  officialEmailDomain,
-} from "./onboardingData";
+import { validateName, validateEmail, validateEmployeePhoneNumber, getInitialFormData } from "./utils";
 
-const personalEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const officialEmailUserRegex = /^[a-zA-Z0-9._]+$/;
 
 function validateForm(formData) {
   const nextErrors = {};
 
-  if (!formData.name.trim()) {
-    nextErrors.name = "Employee name is required.";
-  }
+  const nameError = validateName(formData.name);
+  if (nameError) nextErrors.name = nameError;
 
-  if (!personalEmailRegex.test(formData.personalEmail)) {
-    nextErrors.personalEmail = "Enter a valid personal email address.";
-  }
+  const empPhoneError = validateEmployeePhoneNumber(formData.employeePhoneNumber);
+  if (empPhoneError) nextErrors.employeePhoneNumber = empPhoneError;
 
-  if (!officialEmailUserRegex.test(formData.officialEmailUser)) {
-    nextErrors.officialEmail =
-      "Enter a valid official email username.";
+  const emailError = validateEmail(formData.personalEmail);
+  if (emailError) nextErrors.personalEmail = emailError;
+
+  if (!formData.officialEmailUser) {
+    nextErrors.officialEmail = "Official email username is required.";
+  } else if (!officialEmailUserRegex.test(formData.officialEmailUser)) {
+    nextErrors.officialEmail = "Enter a valid official email username.";
   }
 
   if (!formData.department) {
@@ -58,7 +56,7 @@ export default function HRForm({
   resetOnSuccess = true,
   embedded = false,
   apiBaseUrl = "http://127.0.0.1:8000",
-  officialEmailDomain: explicitOfficialEmailDomain = officialEmailDomain,
+  officialEmailDomain: explicitOfficialEmailDomain = "",
 }) {
   const [formData, setFormData] = useState(() => mergeFormData(initialData));
   const [errors, setErrors] = useState({});
@@ -235,6 +233,21 @@ export default function HRForm({
                 placeholder="Enter employee name"
               />
               {errors.name ? <p className="hr-form-error">{errors.name}</p> : null}
+            </label>
+
+            <label className="hr-form-field">
+              <span className="hr-form-label">Employee Phone Number</span>
+              <input
+                className="hr-form-input"
+                type="text"
+                name="employeePhoneNumber"
+                value={formData.employeePhoneNumber}
+                onChange={handleChange}
+                placeholder="Enter 10-digit phone number"
+              />
+              {errors.employeePhoneNumber ? (
+                <p className="hr-form-error">{errors.employeePhoneNumber}</p>
+              ) : null}
             </label>
 
             <label className="hr-form-field">

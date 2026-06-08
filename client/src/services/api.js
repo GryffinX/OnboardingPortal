@@ -67,11 +67,41 @@ export const api = {
     return { ok: response.ok, data };
   },
 
+  async requestProfileUpdateOtp(currentEmail) {
+    const response = await fetch(`${apiBaseUrl}/api/request-profile-update-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentEmail }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async verifyProfileUpdate(currentEmail, otp, newData) {
+    const response = await fetch(`${apiBaseUrl}/api/verify-profile-update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentEmail, otp, newData }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
   async deleteUser(email) {
     const response = await fetch(`${apiBaseUrl}/api/delete-user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async bulkUpdateUsersStatus(isActive) {
+    const response = await fetch(`${apiBaseUrl}/api/bulk-update-users-status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
@@ -114,6 +144,66 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, category }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async deleteSoftwareItem(name, category) {
+    const response = await fetch(`${apiBaseUrl}/api/delete-software-item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, category }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async updateSoftwareItem(originalName, originalCategory, newName, newCategory) {
+    const response = await fetch(`${apiBaseUrl}/api/update-software-item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ originalName, originalCategory, newName, newCategory }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async createDepartment(name) {
+    const response = await fetch(`${apiBaseUrl}/api/create-department`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async updateDepartment(originalName, newName) {
+    const response = await fetch(`${apiBaseUrl}/api/update-department`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ originalName, newName }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async deleteDepartment(name) {
+    const response = await fetch(`${apiBaseUrl}/api/delete-department`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async deleteRequest(requestId) {
+    const response = await fetch(`${apiBaseUrl}/api/delete-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: requestId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };

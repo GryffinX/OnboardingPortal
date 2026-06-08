@@ -7,6 +7,9 @@ function RequestTable({
   actorValue,
   actorOptions,
   onActorChange,
+  filterValue,
+  filterOptions,
+  onFilterChange,
   searchTerm,
   onSearchChange,
   requests,
@@ -21,18 +24,33 @@ function RequestTable({
           <h2>{title}</h2>
           <p>{subtitle}</p>
         </div>
-        {actorOptions ? (
-          <label className="dashboard-actor">
-            <span>{actorLabel}</span>
-            <select value={actorValue} onChange={(event) => onActorChange(event.target.value)}>
-              {actorOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {filterOptions ? (
+            <div className="table-filters">
+              {filterOptions.map(opt => (
+                <button 
+                  key={opt.key}
+                  className={`filter-tab ${filterValue === opt.key ? "filter-tab-active" : ""}`}
+                  onClick={() => onFilterChange(opt.key)}
+                >
+                  {opt.label}
+                </button>
               ))}
-            </select>
-          </label>
-        ) : null}
+            </div>
+          ) : null}
+          {actorOptions ? (
+            <label className="dashboard-actor">
+              <span>{actorLabel}</span>
+              <select value={actorValue} onChange={(event) => onActorChange(event.target.value)}>
+                {actorOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
       </div>
 
       {showSearch ? (
@@ -73,7 +91,9 @@ function RequestTable({
               >
                 <div>
                   <strong>{request.formData.name}</strong>
-                  <small>{request.requestCode}</small>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                    {request.employeeCode || "N/A"} | {request.requestCode}
+                  </div>
                 </div>
                 <span>{request.formData.department}</span>
                 <span>{request.submittedAt}</span>

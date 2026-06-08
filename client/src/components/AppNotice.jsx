@@ -6,7 +6,7 @@ function AppNotice({ notice, onClear }) {
     
     const timer = setTimeout(() => {
       onClear();
-    }, 5000);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [notice, onClear]);

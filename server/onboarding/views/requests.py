@@ -7,30 +7,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from ..models import OnboardingRequest
+from .utils import parse_software_list, dump_software_list, validate_generic_input
 
 
 DATE_LABEL_FORMAT = "%d %b %Y"
-
-
-def _parse_software_list(value):
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-
-    if not value:
-        return []
-
-    try:
-        parsed = json.loads(value)
-        if isinstance(parsed, list):
-            return [str(item).strip() for item in parsed if str(item).strip()]
-    except (TypeError, json.JSONDecodeError):
-        pass
-
-    return [item.strip() for item in str(value).split(",") if item.strip()]
-
-
-def _dump_software_list(items):
-    return json.dumps(_parse_software_list(items))
 
 
 def _format_date(date_value):
@@ -56,27 +36,59 @@ def _request_numeric_id(request_code, fallback_id):
     return fallback_id
 
 
+def _get_employee_code_by_name(name):
+    if not name: return ""
+    from django.contrib.auth.models import User
+    from django.db.models import Q
+    from ..models import UserProfile
+    # Try to find a user whose full name matches the string
+    # This is a bit loose but works given the project's current structure
+    # A better way would be storing FKs in the request model
+    user = User.objects.filter(Q(first_name__icontains=name) | Q(last_name__icontains=name)).first()
+    if user:
+        try:
+            return user.profile.employee_code or ""
+        except UserProfile.DoesNotExist:
+            pass
+    return ""
+
 def serialize_request(record):
+    subject_code = record.employee_code or ""
+    if not subject_code:
+        from ..models import UserProfile
+        from django.contrib.auth.models import User
+        # Try to find the user by personal email
+        user_obj = User.objects.filter(email=record.personal_email).first()
+        if user_obj:
+            try:
+                subject_code = user_obj.profile.employee_code or ""
+            except UserProfile.DoesNotExist:
+                pass
+
     return {
-        "id": _request_numeric_id(record.request_code, record.id),
+        "id": record.id,
         "requestCode": record.request_code,
+        "employeeCode": subject_code,
         "formData": {
             "name": record.employee_name,
+            "employeePhoneNumber": record.employee_phone_number,
             "personalEmail": record.personal_email,
             "officialEmailUser": (record.official_email or "").split("@")[0],
             "department": record.department,
             "lineManager": record.line_manager,
+            "lineManagerCode": _get_employee_code_by_name(record.line_manager),
             "hod": record.hod,
+            "hodCode": _get_employee_code_by_name(record.hod),
         },
         "officialEmail": record.official_email or "",
         "stage": record.stage,
         "submittedAt": _format_date(record.submitted_at),
         "lastUpdated": _format_date(record.last_updated),
         "additionalSoftware": [],
-        "managerSoftware": _parse_software_list(record.manager_software),
+        "managerSoftware": parse_software_list(record.manager_software),
         "hodSoftware": [],
-        "preInstalledSoftware": _parse_software_list(record.pre_installed_software),
-        "employeeInstalledSoftware": _parse_software_list(record.employee_installed_software),
+        "preInstalledSoftware": parse_software_list(record.pre_installed_software),
+        "employeeInstalledSoftware": parse_software_list(record.employee_installed_software),
         "assetCode": record.asset_code,
         "hodComment": record.hod_comment,
         "stopReason": record.stop_reason,
@@ -103,13 +115,96 @@ def save_request(request):
     except json.JSONDecodeError:
         return JsonResponse({"message": "Invalid JSON payload."}, status=400)
 
+    request_id = payload.get("id")
+    
+    if request_id:
+        # Partial Update by ID
+        try:
+            req = OnboardingRequest.objects.get(id=request_id)
+            if "stage" in payload: req.stage = payload["stage"]
+            if "formData" in payload:
+                fd = payload["formData"]
+                
+                new_phone = (fd.get("employeePhoneNumber") or "").strip()
+                if new_phone and new_phone != req.employee_phone_number:
+                    if OnboardingRequest.objects.filter(employee_phone_number=new_phone).exclude(id=req.id).exists():
+                        return JsonResponse({"message": "A request with this mobile number already exists."}, status=400)
+                
+                new_email = (fd.get("personalEmail") or "").strip()
+                if new_email and new_email != req.personal_email:
+                    if OnboardingRequest.objects.filter(personal_email=new_email).exclude(id=req.id).exists():
+                        return JsonResponse({"message": "A request with this email already exists."}, status=400)
+                    if User.objects.filter(email=new_email).exists():
+                        return JsonResponse({"message": "A user with this email already exists in the system."}, status=400)
+
+                req.employee_name = fd.get("name", req.employee_name)
+                req.employee_phone_number = new_phone
+                req.personal_email = new_email
+                req.department = fd.get("department", req.department)
+                req.line_manager = fd.get("lineManager", req.line_manager)
+                req.hod = fd.get("hod", req.hod)
+            
+            if "officialEmail" in payload: req.official_email = payload["officialEmail"]
+            if "managerSoftware" in payload: req.manager_software = dump_software_list(payload["managerSoftware"])
+            
+            if "assetCode" in payload:
+                new_asset_code = (payload["assetCode"] or "").strip()
+                if new_asset_code and new_asset_code != req.asset_code:
+                    if OnboardingRequest.objects.filter(asset_code__iexact=new_asset_code).exclude(id=req.id).exists():
+                        return JsonResponse({"message": "This Asset Code has already been assigned to another user."}, status=400)
+                req.asset_code = new_asset_code
+
+            if "employeeCode" in payload:
+                from django.contrib.auth.models import User
+                from ..models import UserProfile
+                new_emp_code = (payload["employeeCode"] or "").strip()
+                if new_emp_code and new_emp_code != req.employee_code:
+                    # Check uniqueness in OnboardingRequest
+                    if OnboardingRequest.objects.filter(employee_code__iexact=new_emp_code).exclude(id=req.id).exists():
+                        return JsonResponse({"message": "This Employee Code is already assigned to another request."}, status=400)
+                    # Check uniqueness in UserProfile
+                    if UserProfile.objects.filter(employee_code__iexact=new_emp_code).exclude(user__email=req.personal_email).exists():
+                        return JsonResponse({"message": "This Employee Code is already in use by another portal user."}, status=400)
+                
+                req.employee_code = new_emp_code
+                
+                # Sync with UserProfile if user exists
+                user_obj = User.objects.filter(email=req.personal_email).first()
+                if user_obj:
+                    try:
+                        user_obj.profile.employee_code = new_emp_code
+                        user_obj.profile.save()
+                    except UserProfile.DoesNotExist:
+                        pass
+            
+            if "hodComment" in payload:
+                req.hod_comment = (payload["hodComment"] or "").strip()
+            
+            if "stopReason" in payload:
+                req.stop_reason = (payload["stopReason"] or "").strip()
+            
+            if "reviewReason" in payload:
+                req.review_reason = payload["reviewReason"]
+            
+            if "reviewRequestedBy" in payload: req.review_requested_by = payload["reviewRequestedBy"]
+            if "revisionCount" in payload: req.revision_count = payload["revisionCount"]
+            if "managerApprovedAt" in payload: req.manager_approved_at = payload["managerApprovedAt"]
+            if "hodApprovedAt" in payload: req.hod_approved_at = payload["hodApprovedAt"]
+            
+            req.save()
+            return JsonResponse({"message": "Request updated successfully.", "request": serialize_request(req)})
+        except OnboardingRequest.DoesNotExist:
+            return JsonResponse({"message": "Request not found."}, status=404)
+
+    # Full Create/Update by requestCode
     request_code = (payload.get("requestCode") or "").strip()
     form_data = payload.get("formData") or {}
 
     if not request_code:
-        return JsonResponse({"message": "requestCode is required."}, status=400)
+        return JsonResponse({"message": "requestCode or id is required."}, status=400)
 
     employee_name = (form_data.get("name") or "").strip()
+    employee_phone_number = (form_data.get("employeePhoneNumber") or "").strip()
     personal_email = (form_data.get("personalEmail") or "").strip()
 
     if not employee_name or not personal_email:
@@ -117,15 +212,16 @@ def save_request(request):
 
     defaults = {
         "employee_name": employee_name,
+        "employee_phone_number": employee_phone_number,
         "personal_email": personal_email,
         "official_email": (payload.get("officialEmail") or "").strip() or None,
         "department": (form_data.get("department") or "").strip(),
         "line_manager": (form_data.get("lineManager") or "").strip(),
         "hod": (form_data.get("hod") or "").strip(),
         "stage": (payload.get("stage") or "manager_review").strip(),
-        "pre_installed_software": _dump_software_list(payload.get("preInstalledSoftware")),
-        "employee_installed_software": _dump_software_list(payload.get("employeeInstalledSoftware")),
-        "manager_software": _dump_software_list(payload.get("managerSoftware")),
+        "pre_installed_software": dump_software_list(payload.get("preInstalledSoftware")),
+        "employee_installed_software": dump_software_list(payload.get("employeeInstalledSoftware")),
+        "manager_software": dump_software_list(payload.get("managerSoftware")),
         "asset_code": (payload.get("assetCode") or "").strip(),
         "hod_comment": (payload.get("hodComment") or "").strip(),
         "stop_reason": (payload.get("stopReason") or payload.get("reviewReason") or "").strip(),
@@ -153,3 +249,29 @@ def save_request(request):
             "request": serialize_request(record),
         }
     )
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def delete_request(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        request_id = payload.get("id")
+        
+        if not request_id:
+            return JsonResponse({"message": "Request ID is required."}, status=400)
+            
+        record = OnboardingRequest.objects.get(id=request_id)
+        email = record.personal_email
+        
+        # Delete associated User if exists (this will also delete UserProfile via CASCADE)
+        from django.contrib.auth.models import User
+        user = User.objects.filter(email=email).first()
+        if user:
+            user.delete()
+            
+        record.delete()
+        return JsonResponse({"ok": True, "message": "Onboarding request and associated user records deleted permanently."})
+    except OnboardingRequest.DoesNotExist:
+        return JsonResponse({"message": "Request not found."}, status=404)
+    except Exception as exc:
+        return JsonResponse({"message": str(exc)}, status=500)

@@ -8,34 +8,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from ..models import PasswordResetOTP, UserProfile, Department
-from .utils import generate_otp, PERSONAL_EMAIL_REGEX
-
-
-def normalize_role(role):
-    if not isinstance(role, str):
-        return "Employee"
-
-    canonical_roles = {
-        "admin": "Admin",
-        "manager": "Manager",
-        "hod": "HOD",
-        "employee": "Employee",
-    }
-
-    return canonical_roles.get(role.strip().lower(), "Employee")
-
-
-def resolve_user_role_and_department(user):
-    role = "Admin" if user.is_staff or user.is_superuser else "Employee"
-    department_name = ""
-
-    try:
-        role = normalize_role(user.profile.role or role)
-        department_name = user.profile.department.name if user.profile.department else ""
-    except UserProfile.DoesNotExist:
-        pass
-
-    return role, department_name
+from .utils import generate_otp, PERSONAL_EMAIL_REGEX, normalize_role, resolve_user_role_and_department
 
 
 @csrf_exempt
@@ -134,7 +107,7 @@ def login_view(request):
             user = None
 
     if user is not None:
-        role, department_name = resolve_user_role_and_department(user)
+        role, department_name, phone_number, employee_code, is_active = resolve_user_role_and_department(user)
 
         return JsonResponse({
             "message": "Login successful",
@@ -142,7 +115,10 @@ def login_view(request):
                 "name": f"{user.first_name} {user.last_name}".strip() or user.username,
                 "email": user.email,
                 "role": role,
-                "department": department_name
+                "department": department_name,
+                "phoneNumber": phone_number,
+                "employeeCode": employee_code,
+                "isActive": is_active
             }
         })
     else:

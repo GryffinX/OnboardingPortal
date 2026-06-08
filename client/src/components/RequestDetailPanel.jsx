@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import SoftwareSection from "./SoftwareSection";
 import { pages, workflowStages } from "../constants";
-import { getStageMeta, normalizeSoftwareList } from "../utils";
+import { getStageMeta, normalizeSoftwareList, validateGenericInput } from "../utils";
 
 function getInitialSoftwareDraft(request, role) {
   if (role === pages.manager) {
@@ -18,11 +18,14 @@ function getInitialSoftwareDraft(request, role) {
 function RequestDetailPanel({
   request,
   role,
+  userDepartment,
   onApprove,
   onSendToHr,
   onSaveSoftware,
   onStartHrEdit,
   onStopCase,
+  onDeleteRequest,
+  onShowNotice,
 }) {
   const [softwareDraft, setSoftwareDraft] = useState(() => getInitialSoftwareDraft(request, role));
   const [assetCodeDraft, setAssetCodeDraft] = useState(() => request?.assetCode || "");
@@ -35,15 +38,20 @@ function RequestDetailPanel({
   const [hrReason, setHrReason] = useState("");
   const [stopReason, setStopReason] = useState("");
 
-  useEffect(() => {
-    if (request?.assetCode) {
-      setAssetCodeError("");
-    }
-  }, [request?.assetCode]);
+  const [adminEmpCodeDraft, setAdminEmpCodeDraft] = useState(() => request?.employeeCode || "");
+  const [adminAssetCodeDraft, setAdminAssetCodeDraft] = useState(() => request?.assetCode || "");
+
+  const handleSaveAdminOverrides = () => {
+    onSaveSoftware?.(request.id, [], pages.admin, {
+      employeeCode: adminEmpCodeDraft,
+      assetCode: adminAssetCodeDraft,
+    });
+  };
 
   const handleHrReviewSubmit = () => {
-    if (!hrReason.trim()) {
-      alert("A reason is required to send back to HR.");
+    const error = validateGenericInput(hrReason, "Reason");
+    if (error) {
+      onShowNotice?.("error", "Validation Error", error);
       return;
     }
     onSendToHr(request.id, role === pages.manager ? "Line Manager" : "HOD", hrReason);
@@ -64,15 +72,17 @@ function RequestDetailPanel({
   const stageMeta = getStageMeta(request.stage);
   const isManagerStep = role === pages.manager && request.stage === workflowStages.manager;
   const isHodStep = role === pages.hod && request.stage === workflowStages.hod;
+  const isHrDept = String(userDepartment).trim().toUpperCase() === "HR";
   const isHrRole = role === pages.hr;
   const isHrStep = isHrRole && request.stage === workflowStages.hr;
   const canAct = isManagerStep || isHodStep;
-  const canHrStop = isHrRole && request.stage !== workflowStages.approved && request.stage !== workflowStages.stopped;
-  const canHrEdit = isHrStep;
+  const canHrStop = isHrDept && typeof onStopCase === "function" && request.stage !== workflowStages.approved && request.stage !== workflowStages.stopped;
+  const canHrEdit = isHrDept && isHrStep && typeof onStartHrEdit === "function";
 
   const handleStopCaseSubmit = () => {
-    if (!stopReason.trim()) {
-      alert("A reason is required to stop the case.");
+    const error = validateGenericInput(stopReason, "Reason");
+    if (error) {
+      onShowNotice?.("error", "Validation Error", error);
       return;
     }
 
@@ -82,33 +92,70 @@ function RequestDetailPanel({
   };
 
   const handleSaveManagerExtras = () => {
+    if (!assetCodeDraft || !assetCodeDraft.trim()) {
+      onShowNotice?.("error", "Validation Error", "Asset code is required.");
+      return;
+    }
+    const error = validateGenericInput(assetCodeDraft, "Asset code");
+    if (error) {
+      onShowNotice?.("error", "Validation Error", error);
+      return;
+    }
+    
     onSaveSoftware?.(request.id, normalizeSoftwareList(softwareDraft), role, {
       assetCode: assetCodeDraft,
     });
   };
 
   const handleSaveHodComment = () => {
+    if (hodCommentDraft) {
+      const error = validateGenericInput(hodCommentDraft, "Comment");
+      if (error) {
+        onShowNotice?.("error", "Validation Error", error);
+        return;
+      }
+    }
     onSaveSoftware?.(request.id, [], role, {
       hodComment: hodCommentDraft,
     });
   };
 
   const handleApproveClick = () => {
-    if (role === pages.manager && !request.assetCode) {
-      setAssetCodeError("Asset code is required before approval.");
-      assetCodeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
+    if (role === pages.manager) {
+      if (!request.assetCode && !assetCodeDraft) {
+        setAssetCodeError("Asset code is required before approval.");
+        assetCodeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (assetCodeDraft && assetCodeDraft !== request.assetCode) {
+        onShowNotice?.("error", "Validation Error", "Please click 'Save Software and Asset Code' before approving.");
+        return;
+      }
     }
+
+    if (role === pages.hod) {
+      if (!request.hodComment && !hodCommentDraft) {
+        onShowNotice?.("error", "Validation Error", "An approval comment is required.");
+        return;
+      }
+      if (hodCommentDraft && hodCommentDraft !== request.hodComment) {
+        onShowNotice?.("error", "Validation Error", "Please click 'Save Comment' before approving.");
+        return;
+      }
+    }
+
     setAssetCodeError("");
     onApprove(request.id);
   };
+
+  const displayAssetCodeError = request?.assetCode ? "" : assetCodeError;
 
   return (
     <aside className="detail-panel">
       <div className="detail-top">
         <div>
           <h3>{request.formData.name}</h3>
-          <p>{request.requestCode}</p>
+          <p>{request.requestCode} {request.employeeCode ? `| ${request.employeeCode}` : ""}</p>
         </div>
         <span className={`status-pill status-pill-${stageMeta.tone}`}>
           {stageMeta.label}
@@ -117,20 +164,28 @@ function RequestDetailPanel({
 
       <div className="detail-grid">
         <div>
+          <span>Employee Code</span>
+          <strong>{request.employeeCode || "Pending Assignment"}</strong>
+        </div>
+        <div>
+          <span>Phone Number</span>
+          <strong>{request.formData.employeePhoneNumber}</strong>
+        </div>
+        <div>
           <span>Personal Email</span>
           <strong>{request.formData.personalEmail}</strong>
         </div>
         <div>
-          <span>Official Email</span>
+          <span>Proposed Official Email</span>
           <strong>{request.officialEmail}</strong>
         </div>
         <div>
           <span>Line Manager</span>
-          <strong>{request.formData.lineManager}</strong>
+          <strong>{request.formData.lineManager} {request.formData.lineManagerCode ? `(${request.formData.lineManagerCode})` : ""}</strong>
         </div>
         <div>
           <span>HOD</span>
-          <strong>{request.formData.hod}</strong>
+          <strong>{request.formData.hod} {request.formData.hodCode ? `(${request.formData.hodCode})` : ""}</strong>
         </div>
         <div>
           <span>Department</span>
@@ -142,7 +197,7 @@ function RequestDetailPanel({
         </div>
         <div>
           <span>Asset Code</span>
-          <strong style={assetCodeError ? { color: "#ef4444" } : {}}>
+          <strong style={displayAssetCodeError ? { color: "#ef4444" } : {}}>
             {request.assetCode || "Not assigned"}
           </strong>
         </div>
@@ -171,13 +226,52 @@ function RequestDetailPanel({
         headerLabel={request.formData.lineManager}
       />
 
+      {role === pages.admin && (
+        <section className="software-input-card" style={{ borderTop: "2px solid #102a43", background: "#f8fafc" }}>
+          <h4>Admin Institutional Overrides</h4>
+          <p>Directly modify unique identifiers. Changes will sync with user profiles where applicable.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "16px" }}>
+            <div className="form-group">
+              <label>Employee Code</label>
+              <input
+                type="text"
+                className="dashboard-search"
+                value={adminEmpCodeDraft}
+                onChange={(e) => setAdminEmpCodeDraft(e.target.value)}
+                placeholder="SEC-XXX"
+              />
+            </div>
+            <div className="form-group">
+              <label>Asset Code</label>
+              <input
+                type="text"
+                className="dashboard-search"
+                value={adminAssetCodeDraft}
+                onChange={(e) => setAdminAssetCodeDraft(e.target.value)}
+                placeholder="LP-XXX"
+              />
+            </div>
+          </div>
+          <div className="detail-actions detail-actions-compact" style={{ marginTop: "16px" }}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleSaveAdminOverrides}
+              style={{ background: "#102a43" }}
+            >
+              Save Institutional Overrides
+            </button>
+          </div>
+        </section>
+      )}
+
       {canAct && (
         <section className="software-input-card">
-          <h4>Add/Edit Software List</h4>
+          <h4>{role === pages.manager ? "Add/Edit Software List" : "Add comments"}</h4>
           <p>
             {role === pages.manager
               ? "List any additional software and asset code needed for this employee."
-              : "Add a comment for approval. HOD does not edit software."}
+              : "Add a comment for approval."}
           </p>
           {role === pages.manager ? (
             <>
@@ -192,7 +286,7 @@ function RequestDetailPanel({
                   className="dashboard-search"
                   style={{ 
                     width: "100%",
-                    border: assetCodeError ? "1px solid #ef4444" : "1px solid #e2e8f0"
+                    border: displayAssetCodeError ? "1px solid #ef4444" : "1px solid #e2e8f0"
                   }}
                   value={assetCodeDraft}
                   onChange={(event) => {
@@ -201,14 +295,14 @@ function RequestDetailPanel({
                   }}
                   placeholder="Asset code"
                 />
-                {assetCodeError && (
+                {displayAssetCodeError && (
                   <div style={{ 
                     color: "#ef4444", 
                     fontSize: "0.8rem", 
                     marginTop: "4px",
                     fontWeight: "500" 
                   }}>
-                    {assetCodeError}
+                    {displayAssetCodeError}
                   </div>
                 )}
               </div>
@@ -365,6 +459,19 @@ function RequestDetailPanel({
       {!canAct && !isHrStep ? (
         <p className="detail-note">{stageMeta.description}</p>
       ) : null}
+
+      {role === pages.admin && onDeleteRequest && (
+        <div className="detail-actions" style={{ marginTop: "24px", borderTop: "1px solid #e2e8f0", paddingTop: "24px" }}>
+          <button 
+            type="button" 
+            className="warning-button" 
+            style={{ width: "100%", background: "#ef4444" }}
+            onClick={() => onDeleteRequest(request.id)}
+          >
+            Delete Permanently from Database
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
