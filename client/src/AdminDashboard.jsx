@@ -365,7 +365,7 @@ const AdminDashboard = ({
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleAddSubmit} style={{ display: "grid", gap: "16px" }}>
                 <div className="form-group"><label>Full Name</label><input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} className="dashboard-search" /></div>
-                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: e.target.value })} className="dashboard-search" placeholder="e.g. SEC-001" /></div>
+                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: e.target.value })} className="dashboard-search" placeholder="e.g. 1001" /></div>
                 <div className="form-group"><label>Email Address</label><input type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className="dashboard-search" /></div>
                 <div className="form-group"><label>Phone Number</label><input type="text" value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })} className="dashboard-search" placeholder="10-digit number" /></div>
                 <div className="form-group"><label>Role</label><select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className="dashboard-search">{roles.slice(1).map((role) => <option key={role} value={role}>{role}</option>)}</select></div>
