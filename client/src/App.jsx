@@ -600,8 +600,7 @@ function App() {
     } else if (currentPage === pages.hod) {
       filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hod);
     } else if (currentPage === pages.hr) {
-      // HR needs to see all active requests across all stages to be able to intervene and stop cases
-      filtered = userFilteredRequests.filter(r => r.stage !== workflowStages.stopped && r.stage !== workflowStages.approved);
+      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hr);
     } else if (currentPage === pages.requests || currentPage === pages.admin) {
       if (requestHistoryFilter === "wip") {
         filtered = userFilteredRequests.filter(r => [workflowStages.manager, workflowStages.hod, workflowStages.hr].includes(r.stage));
@@ -636,7 +635,7 @@ function App() {
                   key={pageOption.key}
                   type="button"
                   className={currentPage === pageOption.key ? "nav-pill nav-pill-active" : "nav-pill"}
-                  onClick={() => { setCurrentPage(pageOption.key); setSearchTerm(""); }}
+                  onClick={() => { setCurrentPage(pageOption.key); setSearchTerm(""); setSelectedRequestId(null); }}
                 >
                   {pageOption.label}
                   {getBadgeCount(pageOption.key) > 0 && (
