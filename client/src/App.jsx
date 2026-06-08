@@ -605,6 +605,8 @@ function App() {
     } else if (currentPage === pages.requests || currentPage === pages.admin) {
       if (requestHistoryFilter === "wip") {
         filtered = userFilteredRequests.filter(r => [workflowStages.manager, workflowStages.hod, workflowStages.hr].includes(r.stage));
+      } else if (requestHistoryFilter === "hr_review") {
+        filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hr);
       } else if (requestHistoryFilter === "stopped") {
         filtered = userFilteredRequests.filter(r => r.stage === workflowStages.stopped);
       } else if (requestHistoryFilter === "approved") {
@@ -716,6 +718,7 @@ function App() {
                       filterValue={requestHistoryFilter}
                       filterOptions={[
                         { key: "wip", label: "WIP (Current)" },
+                        { key: "hr_review", label: "HR Review" },
                         { key: "stopped", label: "Stopped" },
                         { key: "approved", label: "Approved" },
                       ]}
@@ -792,6 +795,7 @@ function App() {
                       filterValue={currentPage === pages.requests ? requestHistoryFilter : null}
                       filterOptions={currentPage === pages.requests ? [
                         { key: "wip", label: "WIP (Current)" },
+                        { key: "hr_review", label: "HR Review" },
                         { key: "stopped", label: "Stopped" },
                         { key: "approved", label: "Approved" },
                       ] : null}
