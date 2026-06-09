@@ -570,7 +570,7 @@ function App() {
       showNotice("success", "Saved", "Software and asset details updated.");
       await handleRefreshRequests();
     } else {
-      showNotice("error", "Error", data.message || "Failed to save details.");
+      showNotice("error", "Error", data.message || "An unexpected error occurred while saving details.");
     }
   };
 
