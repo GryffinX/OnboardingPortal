@@ -251,14 +251,14 @@ export default function HRForm({
             </label>
 
             <label className="hr-form-field">
-              <span className="hr-form-label">Employee Phone Number</span>
+              <span className="hr-form-label">Employee Mobile Number</span>
               <input
                 className="hr-form-input"
                 type="text"
                 name="employeePhoneNumber"
                 value={formData.employeePhoneNumber}
                 onChange={handleChange}
-                placeholder="Enter 10-digit phone number"
+                placeholder="Enter 10-digit mobile number"
                 maxLength={10}
               />
               {errors.employeePhoneNumber ? (
