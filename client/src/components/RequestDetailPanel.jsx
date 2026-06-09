@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import SoftwareSection from "./SoftwareSection";
 import { pages, workflowStages } from "../constants";
-import { getStageMeta, normalizeSoftwareList, validateGenericInput } from "../utils";
+import { getStageMeta, normalizeSoftwareList, validateGenericInput, validateCommentInput } from "../utils";
 
 function getInitialSoftwareDraft(request, role) {
   if (role === pages.manager) {
@@ -49,7 +49,7 @@ function RequestDetailPanel({
   };
 
   const handleHrReviewSubmit = () => {
-    const error = validateGenericInput(hrReason, "Reason");
+    const error = validateCommentInput(hrReason, "Reason");
     if (error) {
       onShowNotice?.("error", "Validation Error", error);
       return;
@@ -80,7 +80,7 @@ function RequestDetailPanel({
   const canHrEdit = isHrDept && isHrStep && typeof onStartHrEdit === "function";
 
   const handleStopCaseSubmit = () => {
-    const error = validateGenericInput(stopReason, "Reason");
+    const error = validateCommentInput(stopReason, "Reason");
     if (error) {
       onShowNotice?.("error", "Validation Error", error);
       return;
@@ -109,7 +109,7 @@ function RequestDetailPanel({
 
   const handleSaveHodComment = () => {
     if (hodCommentDraft) {
-      const error = validateGenericInput(hodCommentDraft, "Comment");
+      const error = validateCommentInput(hodCommentDraft, "Comment");
       if (error) {
         onShowNotice?.("error", "Validation Error", error);
         return;
@@ -407,7 +407,7 @@ function RequestDetailPanel({
                 <textarea
                   required
                   value={hrReason}
-                  onChange={(e) => setHrReason(e.target.value.slice(0, 500))}
+                  onChange={(e) => setHrReason(e.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 500))}
                   placeholder="e.g. Please verify the personal email domain."
                   style={{ width: "100%", height: "100px", marginTop: "8px" }}
                   className="dashboard-search"
@@ -443,7 +443,7 @@ function RequestDetailPanel({
                 <textarea
                   required
                   value={stopReason}
-                  onChange={(e) => setStopReason(e.target.value.slice(0, 500))}
+                  onChange={(e) => setStopReason(e.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 500))}
                   placeholder="e.g. Employee declined onboarding after offer acceptance."
                   style={{ width: "100%", height: "100px", marginTop: "8px" }}
                   className="dashboard-search"

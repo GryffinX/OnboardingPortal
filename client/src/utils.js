@@ -85,8 +85,8 @@ export function validateName(name) {
 export function validateEmail(email) {
   if (!email) return "Email is required.";
   if (email.length > 100) return "Email must be less than 100 characters.";
-  const regex = /^[a-zA-Z0-9.]+@[a-zA-Z0-9.]+\.[a-zA-Z0-9]+$/;
-  if (!regex.test(email)) return "Enter a valid email address (no underscores or special characters).";
+  const regex = /^[a-zA-Z0-9.-]+@[a-zA-Z0-9.-]+\.[a-zA-Z0-9-]+$/;
+  if (!regex.test(email)) return "Enter a valid email address (no underscores, hyphens allowed).";
   return null;
 }
 
@@ -102,6 +102,13 @@ export function validateGenericInput(value, fieldName) {
   if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
   if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
   if (/[%:;"'<>(){}[\]|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
+  return null;
+}
+
+export function validateCommentInput(value, fieldName) {
+  const genericError = validateGenericInput(value, fieldName);
+  if (genericError) return genericError;
+  if (value.length < 10 || value.length > 500) return `${fieldName} must be between 10 and 500 characters.`;
   return null;
 }
 
