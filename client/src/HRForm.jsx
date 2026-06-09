@@ -101,10 +101,10 @@ export default function HRForm({
       value = value.replace(/[^a-zA-Z ]/g, "").slice(0, 50);
     }
     if (name === "officialEmailUser") {
-      value = value.replace(/[^a-zA-Z0-9.]/g, "").slice(0, 50);
+      value = value.replace(/[^a-zA-Z0-9.-]/g, "").slice(0, 50);
     }
     if (name === "personalEmail") {
-      value = value.replace(/[^a-zA-Z0-9.@]/g, "").slice(0, 100);
+      value = value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100);
     }
 
     setFormData((prevFormData) => {
