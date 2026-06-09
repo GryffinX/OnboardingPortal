@@ -12,6 +12,8 @@ from .utils import validate_payload, build_message, validate_user_payload, valid
 from django.core.exceptions import ValidationError
 
 
+from django.db import transaction
+
 def _get_employee_code_by_name(name):
     if not name: return ""
     from django.contrib.auth.models import User
@@ -186,52 +188,59 @@ def onboarding_email(request):
         )
 
     try:
-        message, official_email = build_message(payload)
-        message.send(fail_silently=False)
-        
-        # Robust unique code generation
-        last_request = OnboardingRequest.objects.order_by("-id").first()
-        next_num = 101
-        if last_request:
-            try:
-                # Extract number from ONB-XXX
-                last_code = last_request.request_code
-                if "-" in last_code:
-                    next_num = int(last_code.split("-")[-1]) + 1
-                else:
+        with transaction.atomic():
+            # Robust unique code generation
+            last_request = OnboardingRequest.objects.order_by("-id").first()
+            next_num = 101
+            if last_request:
+                try:
+                    # Extract number from ONB-XXX
+                    last_code = last_request.request_code
+                    if "-" in last_code:
+                        next_num = int(last_code.split("-")[-1]) + 1
+                    else:
+                        next_num = last_request.id + 101
+                except (ValueError, IndexError):
                     next_num = last_request.id + 101
-            except (ValueError, IndexError):
-                next_num = last_request.id + 101
-        
-        # Ensure true uniqueness by checking existence
-        while OnboardingRequest.objects.filter(request_code=f"ONB-{next_num}").exists():
-            next_num += 1
             
-        req_code = f"ONB-{next_num}"
-        
-        OnboardingRequest.objects.create(
-            request_code=req_code,
-            employee_name=payload["name"],
-            employee_phone_number=payload["employeePhoneNumber"],
-            personal_email=payload["personalEmail"],
-            official_email=official_email,
-            department=payload["department"],
-            line_manager=payload["lineManager"],
-            hod=payload["hod"],
-            stage="manager_review"
-        )
+            # Ensure true uniqueness by checking existence
+            while OnboardingRequest.objects.filter(request_code=f"ONB-{next_num}").exists():
+                next_num += 1
+                
+            req_code = f"ONB-{next_num}"
+            
+            message, official_email = build_message(payload)
+            
+            OnboardingRequest.objects.create(
+                request_code=req_code,
+                employee_name=payload["name"],
+                employee_phone_number=payload["employeePhoneNumber"],
+                personal_email=payload["personalEmail"],
+                official_email=official_email,
+                department=payload["department"],
+                line_manager=payload["lineManager"],
+                hod=payload["hod"],
+                stage="manager_review"
+            )
+            
+            # Send email only after DB create is successful in the atomic block
+            try:
+                message.send(fail_silently=False)
+            except Exception as mail_exc:
+                # If mail fails, we raise an exception to trigger the transaction rollback
+                raise Exception(f"Failed to send email: {mail_exc}")
 
     except Exception as exc:
-        error_message = "Unable to send mail right now."
+        error_message = "Unable to complete request right now."
 
         if settings.DEBUG:
-            error_message = f"Unable to send mail right now: {exc}"
+            error_message = f"Transaction failed: {exc}"
 
         return JsonResponse({"message": error_message}, status=500)
 
     return JsonResponse(
         {
-            "message": "Mail sent successfully",
+            "message": "Mail sent and request saved successfully",
             "officialEmail": official_email,
             "recipient": settings.TEST_RECIPIENT,
         }
@@ -270,118 +279,119 @@ def finalize_onboarding(request):
     request_code = payload.get("requestCode")
 
     try:
-        # Check if user already exists
-        user = User.objects.filter(email=email).first() or User.objects.filter(username=email).first()
-        
-        # Get Onboarding Request Details
-        onb_req = None
-        if request_code:
-            onb_req = OnboardingRequest.objects.filter(request_code=request_code).first()
-
-        # Uniqueness checks for final account creation
-        if not user:
-            phone = (onb_req.employee_phone_number if onb_req else "").strip()
-            if phone and UserProfile.objects.filter(phone_number=phone).exists():
-                return JsonResponse({"message": "The mobile number from this request is already assigned to another registered user."}, status=400)
-
-        default_password = None
-        employee_code = ""
-        
-        if not user:
-            # Create a default password
-            default_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
-
-            # Create user
-            first_name = name.split(" ")[0]
-            last_name = " ".join(name.split(" ")[1:]) if " " in name else ""
-
-            user = User.objects.create_user(
-                username=email,
-                email=email,
-                password=default_password,
-                first_name=first_name,
-                last_name=last_name
-            )
+        with transaction.atomic():
+            # Check if user already exists
+            user = User.objects.filter(email=email).first() or User.objects.filter(username=email).first()
             
-            # Find department
-            dept = Department.objects.filter(name=department_name).first()
+            # Get Onboarding Request Details
+            onb_req = None
+            if request_code:
+                onb_req = OnboardingRequest.objects.filter(request_code=request_code).first()
 
-            # Generate employee_code if not provided
-            employee_code = payload.get("employeeCode")
-            if not employee_code:
-                employee_code = get_next_employee_code()
+            # Uniqueness checks for final account creation
+            if not user:
+                phone = (onb_req.employee_phone_number if onb_req else "").strip()
+                if phone and UserProfile.objects.filter(phone_number=phone).exists():
+                    return JsonResponse({"message": "The mobile number from this request is already assigned to another registered user."}, status=400)
 
-            # Create/Update profile
-            profile, created = UserProfile.objects.update_or_create(
-                user=user, 
-                defaults={"role": "Employee", "department": dept, "employee_code": employee_code, "phone_number": phone}
-            )
-            profile.full_clean()
-            profile.save()
+            default_password = None
+            employee_code = ""
+            
+            if not user:
+                # Create a default password
+                default_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
 
-            # Send email only to new users with FULL DETAILS
-            try:
-                from .utils import sanitize_for_email
-                # Prepare software lists for email
-                pre_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.pre_installed_software))) if onb_req else "Standard Pre-installed"
-                emp_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.employee_installed_software))) if onb_req else "Standard Employee Setup"
-                mgr_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.manager_software))) if onb_req else "N/A"
-                asset_code = sanitize_for_email(onb_req.asset_code) if onb_req else "Pending"
-                official_email = sanitize_for_email(onb_req.official_email) if onb_req else email
+                # Create user
+                first_name = name.split(" ")[0]
+                last_name = " ".join(name.split(" ")[1:]) if " " in name else ""
 
-                body_lines = [
-                    f"Hello {sanitize_for_email(name)},",
-                    "",
-                    "Congratulations! Your onboarding has been fully approved.",
-                    "Your institutional account and IT profile have been created successfully.",
-                    "",
-                    "--- ACCOUNT DETAILS ---",
-                    f"Employee Code: {sanitize_for_email(employee_code)}",
-                    f"Official Email: {official_email}",
-                    f"Default Password: {default_password}",
-                    "Please log in and change your password immediately via the 'Forgot Password' link.",
-                    "",
-                    "--- IT ASSETS & SETUP ---",
-                    f"Hardware Asset Code: {asset_code}",
-                    f"Pre-installed Software: {pre_sw}",
-                    f"Software to install: {emp_sw}",
-                    f"Additional Software (Manager requested): {mgr_sw}",
-                    "",
-                    "--- REPORTING STRUCTURE ---",
-                    f"Department: {sanitize_for_email(department_name)}",
-                    f"Line Manager: {sanitize_for_email(onb_req.line_manager) if onb_req else 'N/A'}",
-                    f"HOD: {sanitize_for_email(onb_req.hod) if onb_req else 'N/A'}",
-                    "",
-                    "Regards,",
-                    "Institutional HR Team"
-                ]
-
-                message = EmailMessage(
-                    subject=f"Welcome to the Team! Your Onboarding is Approved ({employee_code})",
-                    body="\n".join(body_lines),
-                    from_email=settings.EMAIL_HOST_USER,
-                    to=[email],
+                user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    password=default_password,
+                    first_name=first_name,
+                    last_name=last_name
                 )
-                message.send(fail_silently=False)
-            except Exception as mail_exc:
-                if settings.DEBUG:
-                    print(f"Failed to send welcome email: {mail_exc}")
-        
-        # Update OnboardingRequest stage if request_code provided
-        if onb_req:
-            onb_req.stage = "approved"
-            onb_req.stop_reason = ""
-            if employee_code:
-                onb_req.employee_code = employee_code
-            onb_req.save()
+                
+                # Find department
+                dept = Department.objects.filter(name=department_name).first()
 
-        return JsonResponse({
-            "message": "User account is active.",
-            "password": default_password,
-            "created": default_password is not None,
-            "employeeCode": employee_code
-        })
+                # Generate employee_code if not provided
+                employee_code = payload.get("employeeCode")
+                if not employee_code:
+                    employee_code = get_next_employee_code()
+
+                # Create/Update profile
+                profile, created = UserProfile.objects.update_or_create(
+                    user=user, 
+                    defaults={"role": "Employee", "department": dept, "employee_code": employee_code, "phone_number": phone}
+                )
+                profile.full_clean()
+                profile.save()
+
+                # Send email only to new users with FULL DETAILS
+                try:
+                    from .utils import sanitize_for_email
+                    # Prepare software lists for email
+                    pre_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.pre_installed_software))) if onb_req else "Standard Pre-installed"
+                    emp_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.employee_installed_software))) if onb_req else "Standard Employee Setup"
+                    mgr_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.manager_software))) if onb_req else "N/A"
+                    asset_code = sanitize_for_email(onb_req.asset_code) if onb_req else "Pending"
+                    official_email = sanitize_for_email(onb_req.official_email) if onb_req else email
+
+                    body_lines = [
+                        f"Hello {sanitize_for_email(name)},",
+                        "",
+                        "Congratulations! Your onboarding has been fully approved.",
+                        "Your institutional account and IT profile have been created successfully.",
+                        "",
+                        "--- ACCOUNT DETAILS ---",
+                        f"Employee Code: {sanitize_for_email(employee_code)}",
+                        f"Official Email: {official_email}",
+                        f"Default Password: {default_password}",
+                        "Please log in and change your password immediately via the 'Forgot Password' link.",
+                        "",
+                        "--- IT ASSETS & SETUP ---",
+                        f"Hardware Asset Code: {asset_code}",
+                        f"Pre-installed Software: {pre_sw}",
+                        f"Software to install: {emp_sw}",
+                        f"Additional Software (Manager requested): {mgr_sw}",
+                        "",
+                        "--- REPORTING STRUCTURE ---",
+                        f"Department: {sanitize_for_email(department_name)}",
+                        f"Line Manager: {sanitize_for_email(onb_req.line_manager) if onb_req else 'N/A'}",
+                        f"HOD: {sanitize_for_email(onb_req.hod) if onb_req else 'N/A'}",
+                        "",
+                        "Regards,",
+                        "Institutional HR Team"
+                    ]
+
+                    message = EmailMessage(
+                        subject=f"Welcome to the Team! Your Onboarding is Approved ({employee_code})",
+                        body="\n".join(body_lines),
+                        from_email=settings.EMAIL_HOST_USER,
+                        to=[email],
+                    )
+                    message.send(fail_silently=False)
+                except Exception as mail_exc:
+                    raise Exception(f"Failed to send welcome email: {mail_exc}")
+            
+            # Update OnboardingRequest stage if request_code provided
+            if onb_req:
+                onb_req.stage = "approved"
+                onb_req.stop_reason = ""
+                if employee_code:
+                    onb_req.employee_code = employee_code
+                onb_req.save()
+
     except ValidationError as e:
         return JsonResponse({"message": str(e)}, status=400)
     except Exception as exc:
         return JsonResponse({"message": f"Error finalising onboarding: {str(exc)}"}, status=500)
+
+    return JsonResponse({
+        "message": "User account is active.",
+        "password": default_password,
+        "created": default_password is not None,
+        "employeeCode": employee_code
+    })

@@ -10,6 +10,8 @@ from .utils import normalize_role, validate_user_payload, validate_generic_input
 from django.core.exceptions import ValidationError
 
 
+from django.db import transaction
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_user(request):
@@ -44,52 +46,52 @@ def create_user(request):
         return JsonResponse({"message": "This employee code is already in use."}, status=400)
 
     try:
-        # Create user
-        first_name = name.split(" ")[0]
-        last_name = " ".join(name.split(" ")[1:]) if " " in name else ""
-        
-        user = User.objects.create_user(
-            username=email,
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name
-        )
-        
-        # Find department
-        dept = None
-        if department_name:
-            dept = Department.objects.filter(name=department_name).first()
-        
-        # Create profile
-        profile = UserProfile(user=user, role=role, department=dept, phone_number=phone, employee_code=employee_code)
-        profile.full_clean()
-        profile.save()
-
-        # Send email to the new user
-        try:
-            message = EmailMessage(
-                subject="Welcome to Onboarding Portal - Your Account Details",
-                body=(
-                    f"Hello {name},\n\n"
-                    f"Your account has been created successfully on the Onboarding Portal.\n\n"
-                    f"Employee Code: {employee_code}\n"
-                    f"Role: {role}\n"
-                    f"Department: {department_name}\n\n"
-                    f"You can log in using the following credentials:\n"
-                    f"Login URL: http://localhost:5173/\n"
-                    f"Email: {email}\n"
-                    f"Initial Password: {password}\n\n"
-                    f"Please change your password after your first login using the 'Forgot Password' flow.\n\n"
-                    f"Regards,\nAdmin Team"
-                ),
-                from_email=settings.EMAIL_HOST_USER,
-                to=[email],
+        with transaction.atomic():
+            # Create user
+            first_name = name.split(" ")[0]
+            last_name = " ".join(name.split(" ")[1:]) if " " in name else ""
+            
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
             )
-            message.send(fail_silently=False)
-        except Exception as mail_exc:
-            if settings.DEBUG:
-                print(f"Failed to send welcome email: {mail_exc}")
+            
+            # Find department
+            dept = None
+            if department_name:
+                dept = Department.objects.filter(name=department_name).first()
+            
+            # Create profile
+            profile = UserProfile(user=user, role=role, department=dept, phone_number=phone, employee_code=employee_code)
+            profile.full_clean()
+            profile.save()
+
+            # Send email to the new user
+            try:
+                message = EmailMessage(
+                    subject="Welcome to Onboarding Portal - Your Account Details",
+                    body=(
+                        f"Hello {name},\n\n"
+                        f"Your account has been created successfully on the Onboarding Portal.\n\n"
+                        f"Employee Code: {employee_code}\n"
+                        f"Role: {role}\n"
+                        f"Department: {department_name}\n\n"
+                        f"You can log in using the following credentials:\n"
+                        f"Login URL: http://localhost:5173/\n"
+                        f"Email: {email}\n"
+                        f"Initial Password: {password}\n\n"
+                        f"Please change your password after your first login using the 'Forgot Password' flow.\n\n"
+                        f"Regards,\nAdmin Team"
+                    ),
+                    from_email=settings.EMAIL_HOST_USER,
+                    to=[email],
+                )
+                message.send(fail_silently=False)
+            except Exception as mail_exc:
+                raise Exception(f"Failed to send welcome email: {mail_exc}")
 
         return JsonResponse({
             "message": "User created successfully. Welcome email sent.",
@@ -135,60 +137,61 @@ def update_user(request):
     is_active = payload.get("isActive")
 
     try:
-        user = User.objects.get(email=original_email)
-        
-        if name:
-            first_name = name.split(" ")[0]
-            last_name = " ".join(name.split(" ")[1:]) if " " in name else ""
-            user.first_name = first_name
-            user.last_name = last_name
-        
-        if email and email != original_email:
-            if User.objects.filter(email=email).exclude(id=user.id).exists():
-                return JsonResponse({"message": "New email already in use."}, status=400)
-            user.email = email
-            user.username = email
-        
-        if password:
-            user.set_password(password)
-        
-        if is_active is not None:
-            user.is_active = bool(is_active)
-        
-        user.save()
-        
-        profile, created = UserProfile.objects.get_or_create(user=user)
-        if role:
-            profile.role = normalize_role(role)
-        if department_name:
-            dept = Department.objects.filter(name=department_name).first()
-            profile.department = dept
-        
-        if phone is not None:
-            if phone and UserProfile.objects.filter(phone_number=phone).exclude(user=user).exists():
-                return JsonResponse({"message": "This phone number is already assigned to another user."}, status=400)
-            profile.phone_number = phone
-        
-        if employee_code is not None:
-            if employee_code and UserProfile.objects.filter(employee_code=employee_code).exclude(user=user).exists():
-                return JsonResponse({"message": "This employee code is already in use."}, status=400)
-            profile.employee_code = employee_code
-        
-        profile.full_clean()
-        profile.save()
+        with transaction.atomic():
+            user = User.objects.get(email=original_email)
+            
+            if name:
+                first_name = name.split(" ")[0]
+                last_name = " ".join(name.split(" ")[1:]) if " " in name else ""
+                user.first_name = first_name
+                user.last_name = last_name
+            
+            if email and email != original_email:
+                if User.objects.filter(email=email).exclude(id=user.id).exists():
+                    return JsonResponse({"message": "New email already in use."}, status=400)
+                user.email = email
+                user.username = email
+            
+            if password:
+                user.set_password(password)
+            
+            if is_active is not None:
+                user.is_active = bool(is_active)
+            
+            user.save()
+            
+            profile, created = UserProfile.objects.get_or_create(user=user)
+            if role:
+                profile.role = normalize_role(role)
+            if department_name:
+                dept = Department.objects.filter(name=department_name).first()
+                profile.department = dept
+            
+            if phone is not None:
+                if phone and UserProfile.objects.filter(phone_number=phone).exclude(user=user).exists():
+                    return JsonResponse({"message": "This phone number is already assigned to another user."}, status=400)
+                profile.phone_number = phone
+            
+            if employee_code is not None:
+                if employee_code and UserProfile.objects.filter(employee_code=employee_code).exclude(user=user).exists():
+                    return JsonResponse({"message": "This employee code is already in use."}, status=400)
+                profile.employee_code = employee_code
+            
+            profile.full_clean()
+            profile.save()
 
-        return JsonResponse({
-            "message": "User updated successfully.",
-            "user": {
-                "name": f"{user.first_name} {user.last_name}".strip() or user.username,
-                "email": user.email,
-                "role": profile.role,
-                "department": profile.department.name if profile.department else "",
-                "phoneNumber": profile.phone_number,
-                "employeeCode": profile.employee_code,
-                "isActive": user.is_active
-            }
-        })
+            return JsonResponse({
+                "message": "User updated successfully.",
+                "user": {
+                    "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                    "email": user.email,
+                    "role": profile.role,
+                    "department": profile.department.name if profile.department else "",
+                    "phoneNumber": profile.phone_number,
+                    "employeeCode": profile.employee_code,
+                    "isActive": user.is_active
+                }
+            })
     except User.DoesNotExist:
         return JsonResponse({"message": "User not found."}, status=404)
     except ValidationError as e:
@@ -250,64 +253,66 @@ def verify_profile_update(request):
         return JsonResponse({"message": "Validation failed.", "errors": errors}, status=400)
 
     try:
-        user = User.objects.get(email=current_email)
-        
-        name = new_data.get("name")
-        email = new_data.get("email")
-        phone = new_data.get("phoneNumber")
-        employee_code = new_data.get("employeeCode")
-        password = new_data.get("password")
-
-        if name:
-            parts = name.strip().split(" ")
-            user.first_name = parts[0]
-            user.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-        
-        if email is not None:
-            if not email:
-                return JsonResponse({"message": "Email cannot be empty."}, status=400)
-            if email != current_email:
-                if User.objects.filter(email=email).exclude(id=user.id).exists():
-                    return JsonResponse({"message": "The new email is already in use by another user."}, status=400)
-                user.email = email
-                user.username = email
-        
-        if password:
-            user.set_password(password)
-        
-        user.save()
-
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        if phone is not None:
-            phone_val = phone.strip()
-            if phone_val and UserProfile.objects.filter(phone_number=phone_val).exclude(user=user).exists():
-                return JsonResponse({"message": "This phone number is already assigned to another user."}, status=400)
-            profile.phone_number = phone_val
-        
-        if employee_code is not None:
-            code_val = employee_code.strip()
-            if code_val and UserProfile.objects.filter(employee_code=code_val).exclude(user=user).exists():
-                return JsonResponse({"message": "This employee code is already in use."}, status=400)
-            profile.employee_code = code_val
+        with transaction.atomic():
+            user = User.objects.get(email=current_email)
             
-        profile.full_clean()
-        profile.save()
+            name = new_data.get("name")
+            email = new_data.get("email")
+            phone = new_data.get("phoneNumber")
+            employee_code = new_data.get("employeeCode")
+            password = new_data.get("password")
 
-        otp_record.is_verified = True
-        otp_record.save()
+            if name:
+                parts = name.strip().split(" ")
+                user.first_name = parts[0]
+                user.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+            
+            if email is not None:
+                if not email:
+                    return JsonResponse({"message": "Email cannot be empty."}, status=400)
+                if email != current_email:
+                    if User.objects.filter(email=email).exclude(id=user.id).exists():
+                        return JsonResponse({"message": "The new email is already in use by another user."}, status=400)
+                    user.email = email
+                    user.username = email
+            
+            if password:
+                user.set_password(password)
+            
+            user.save()
 
-        return JsonResponse({
-            "message": "Profile updated successfully.",
-            "user": {
-                "name": f"{user.first_name} {user.last_name}".strip() or user.username,
-                "email": user.email,
-                "role": profile.role,
-                "department": profile.department.name if profile.department else "",
-                "phoneNumber": profile.phone_number,
-                "employeeCode": profile.employee_code,
-                "isActive": user.is_active
-            }
-        })
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            if phone is not None:
+                phone_val = phone.strip()
+                if phone_val and UserProfile.objects.filter(phone_number=phone_val).exclude(user=user).exists():
+                    return JsonResponse({"message": "This phone number is already assigned to another user."}, status=400)
+                profile.phone_number = phone_val
+            
+            if employee_code is not None:
+                code_val = employee_code.strip()
+                if code_val and UserProfile.objects.filter(employee_code=code_val).exclude(user=user).exists():
+                    return JsonResponse({"message": "This employee code is already in use."}, status=400)
+                profile.employee_code = code_val
+                
+            profile.full_clean()
+            profile.save()
+
+            otp_record.is_verified = True
+            otp_record.save()
+
+            user.refresh_from_db()
+            return JsonResponse({
+                "message": "Profile updated successfully.",
+                "user": {
+                    "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                    "email": user.email,
+                    "role": profile.role,
+                    "department": profile.department.name if profile.department else "",
+                    "phoneNumber": profile.phone_number,
+                    "employeeCode": profile.employee_code,
+                    "isActive": user.is_active
+                }
+            })
     except User.DoesNotExist:
         return JsonResponse({"message": "User not found."}, status=404)
     except ValidationError as e:
