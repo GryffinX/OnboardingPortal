@@ -11,6 +11,14 @@ def validate_generic_text(value):
         raise ValidationError("Value cannot start or end with a space.")
     if "  " in value:
         raise ValidationError("Value cannot contain double spaces.")
+    if re.search(r"[%:;\"'<>(){}[\]|\\~`^!*+?]", value):
+        raise ValidationError("Value contains restricted special characters.")
+
+def validate_comment_text(value):
+    if not value: return
+    validate_generic_text(value)
+    if len(value) < 10 or len(value) > 500:
+        raise ValidationError("Comment/Reason must be between 10 and 500 characters.")
 
 def validate_employee_name(value):
     validate_generic_text(value)
@@ -20,7 +28,8 @@ def validate_employee_name(value):
         raise ValidationError("Name must be between 3 and 50 characters.")
 
 def validate_phone_number(value):
-    if not value: return
+    if not value:
+        raise ValidationError("Phone number is required.")
     if not value.isdigit():
         raise ValidationError("Phone number must contain only digits.")
     if len(value) != 10:
@@ -52,7 +61,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     role = models.CharField(max_length=50, db_index=True) # Admin, Manager, HOD, Employee
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True)
-    phone_number = models.CharField(max_length=50, blank=True, unique=True, null=True, validators=[validate_phone_number])
+    phone_number = models.CharField(max_length=10, unique=True, validators=[validate_phone_number])
     employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True, validators=[validate_generic_text])
 
     def clean(self):
@@ -97,13 +106,13 @@ class SoftwareCatalogItem(models.Model):
 
 class OnboardingRequest(models.Model):
     request_code = models.CharField(max_length=20, unique=True)
-    employee_name = models.CharField(max_length=255, validators=[validate_employee_name])
-    employee_phone_number = models.CharField(max_length=50, unique=True, null=True, blank=True, validators=[validate_phone_number])
+    employee_name = models.CharField(max_length=50, validators=[validate_employee_name])
+    employee_phone_number = models.CharField(max_length=10, unique=True, validators=[validate_phone_number])
     personal_email = models.EmailField(db_index=True, unique=True)
-    official_email = models.EmailField(blank=True, null=True)
+    official_email = models.EmailField(blank=True, default="")
     department = models.CharField(max_length=100, validators=[validate_generic_text])
-    line_manager = models.CharField(max_length=255, validators=[validate_generic_text])
-    hod = models.CharField(max_length=255, validators=[validate_generic_text])
+    line_manager = models.CharField(max_length=50, validators=[validate_employee_name])
+    hod = models.CharField(max_length=50, validators=[validate_employee_name])
     
     stage = models.CharField(max_length=50, default="manager_review")
     submitted_at = models.DateField(auto_now_add=True)
@@ -114,11 +123,11 @@ class OnboardingRequest(models.Model):
     manager_software = models.TextField(blank=True)
     asset_code = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
     employee_code = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
-    hod_comment = models.TextField(blank=True, validators=[validate_generic_text])
-    stop_reason = models.TextField(blank=True, validators=[validate_generic_text])
+    hod_comment = models.TextField(blank=True, validators=[validate_comment_text])
+    stop_reason = models.TextField(blank=True, validators=[validate_comment_text])
     
     review_requested_by = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
-    review_reason = models.TextField(blank=True, validators=[validate_generic_text])
+    review_reason = models.TextField(blank=True, validators=[validate_comment_text])
     revision_count = models.IntegerField(default=0)
     
     manager_approved_at = models.CharField(max_length=50, blank=True)
@@ -132,10 +141,10 @@ class OnboardingRequest(models.Model):
         validate_generic_text(self.line_manager)
         validate_generic_text(self.hod)
         if self.asset_code: validate_generic_text(self.asset_code)
-        if self.hod_comment: validate_generic_text(self.hod_comment)
-        if self.stop_reason: validate_generic_text(self.stop_reason)
+        if self.hod_comment: validate_comment_text(self.hod_comment)
+        if self.stop_reason: validate_comment_text(self.stop_reason)
         if self.review_requested_by: validate_generic_text(self.review_requested_by)
-        if self.review_reason: validate_generic_text(self.review_reason)
+        if self.review_reason: validate_comment_text(self.review_reason)
 
     def save(self, *args, **kwargs):
         self.full_clean()

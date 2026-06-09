@@ -237,8 +237,9 @@ function RequestDetailPanel({
                 type="text"
                 className="dashboard-search"
                 value={adminEmpCodeDraft}
-                onChange={(e) => setAdminEmpCodeDraft(e.target.value)}
+                onChange={(e) => setAdminEmpCodeDraft(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 placeholder="1001"
+                maxLength={4}
               />
             </div>
             <div className="form-group">
@@ -247,8 +248,9 @@ function RequestDetailPanel({
                 type="text"
                 className="dashboard-search"
                 value={adminAssetCodeDraft}
-                onChange={(e) => setAdminAssetCodeDraft(e.target.value)}
+                onChange={(e) => setAdminAssetCodeDraft(e.target.value.slice(0, 100))}
                 placeholder="LP-XXX"
+                maxLength={100}
               />
             </div>
           </div>
@@ -277,8 +279,9 @@ function RequestDetailPanel({
             <>
               <textarea
                 value={softwareDraft}
-                onChange={(event) => setSoftwareDraft(event.target.value)}
+                onChange={(event) => setSoftwareDraft(event.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 500))}
                 placeholder="Example: Tableau, Figma, Adobe Acrobat"
+                maxLength={500}
               />
               <div ref={assetCodeRef} style={{ position: "relative", marginTop: "12px" }}>
                 <input
@@ -290,10 +293,11 @@ function RequestDetailPanel({
                   }}
                   value={assetCodeDraft}
                   onChange={(event) => {
-                    setAssetCodeDraft(event.target.value);
+                    setAssetCodeDraft(event.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 100));
                     if (assetCodeError) setAssetCodeError("");
                   }}
                   placeholder="Asset code"
+                  maxLength={100}
                 />
                 {displayAssetCodeError && (
                   <div style={{ 
@@ -320,8 +324,9 @@ function RequestDetailPanel({
             <>
               <textarea
                 value={hodCommentDraft}
-                onChange={(event) => setHodCommentDraft(event.target.value)}
+                onChange={(event) => setHodCommentDraft(event.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 500))}
                 placeholder="Add approval comment"
+                maxLength={500}
               />
               <div className="detail-actions detail-actions-compact">
                 <button
@@ -402,10 +407,11 @@ function RequestDetailPanel({
                 <textarea
                   required
                   value={hrReason}
-                  onChange={(e) => setHrReason(e.target.value)}
+                  onChange={(e) => setHrReason(e.target.value.slice(0, 500))}
                   placeholder="e.g. Please verify the personal email domain."
                   style={{ width: "100%", height: "100px", marginTop: "8px" }}
                   className="dashboard-search"
+                  maxLength={500}
                 />
               </div>
               <div className="detail-actions" style={{ marginTop: "16px" }}>
@@ -437,10 +443,11 @@ function RequestDetailPanel({
                 <textarea
                   required
                   value={stopReason}
-                  onChange={(e) => setStopReason(e.target.value)}
+                  onChange={(e) => setStopReason(e.target.value.slice(0, 500))}
                   placeholder="e.g. Employee declined onboarding after offer acceptance."
                   style={{ width: "100%", height: "100px", marginTop: "8px" }}
                   className="dashboard-search"
+                  maxLength={500}
                 />
               </div>
               <div className="detail-actions" style={{ marginTop: "16px" }}>

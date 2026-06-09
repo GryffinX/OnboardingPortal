@@ -4,8 +4,8 @@ import string
 from django.conf import settings
 from django.core.mail import EmailMessage
 
-PERSONAL_EMAIL_REGEX = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
-OFFICIAL_EMAIL_USER_REGEX = r"^[a-zA-Z0-9._]+$"
+PERSONAL_EMAIL_REGEX = r"^[a-zA-Z0-9.]+@[a-zA-Z0-9.]+\.[a-zA-Z0-9]+$"
+OFFICIAL_EMAIL_USER_REGEX = r"^[a-zA-Z0-9.]+$"
 
 
 def normalize_role(role):
@@ -60,7 +60,15 @@ def validate_generic_input(value, field_name):
     if not value: return f"{field_name} is required."
     if value.startswith(" ") or value.endswith(" "): return f"{field_name} cannot start or end with a space."
     if "  " in value: return f"{field_name} cannot contain double spaces."
+    if re.search(r"[%:;\"'<>(){}[\]|\\~`^!*+?]", value):
+        return f"{field_name} contains restricted special characters."
     return None
+
+def sanitize_for_email(value):
+    if not value: return ""
+    # Remove restricted characters: %:;"'<>(){}[]|\~`^!*+?
+    return re.sub(r"[%:;\"'<>(){}[\]|\\~`^!*+?]", "", str(value))
+
 
 def validate_payload(payload):
     errors = {}
@@ -118,9 +126,8 @@ def validate_user_payload(payload):
     if not email or not re.match(PERSONAL_EMAIL_REGEX, email):
         errors["email"] = "Enter a valid email address."
     
-    if phone:
-        phone_err = validate_phone(phone)
-        if phone_err: errors["phoneNumber"] = phone_err
+    phone_err = validate_phone(phone)
+    if phone_err: errors["phoneNumber"] = phone_err
     
     if employee_code:
         code_err = validate_generic_input(employee_code, "Employee Code")
@@ -142,13 +149,13 @@ def build_message(payload):
             [
                 "A new onboarding form has been submitted successfully. You are requested to review the same.",
                 "",
-                f"Employee Name: {payload['name'].strip()}",
-                f"Employee Phone Number: {payload['employeePhoneNumber'].strip()}",
-                f"Entered Personal Email: {payload['personalEmail'].strip()}",
-                f"Proposed Official Email: {official_email}",
-                f"Department: {payload['department'].strip()}",
-                f"Line Manager: {payload['lineManager'].strip()}",
-                f"HOD: {payload['hod'].strip()}",
+                f"Employee Name: {sanitize_for_email(payload['name'].strip())}",
+                f"Employee Phone Number: {sanitize_for_email(payload['employeePhoneNumber'].strip())}",
+                f"Entered Personal Email: {sanitize_for_email(payload['personalEmail'].strip())}",
+                f"Proposed Official Email: {sanitize_for_email(official_email)}",
+                f"Department: {sanitize_for_email(payload['department'].strip())}",
+                f"Line Manager: {sanitize_for_email(payload['lineManager'].strip())}",
+                f"HOD: {sanitize_for_email(payload['hod'].strip())}",
             ]
         ),
         from_email=settings.EMAIL_HOST_USER,

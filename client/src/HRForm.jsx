@@ -91,7 +91,21 @@ export default function HRForm({
     .map(u => u.name);
 
   function handleChange(event) {
-    const { name, value } = event.target;
+    let { name, value } = event.target;
+
+    // Strict input masking
+    if (name === "employeePhoneNumber") {
+      value = value.replace(/\D/g, "").slice(0, 10);
+    }
+    if (name === "name") {
+      value = value.replace(/[^a-zA-Z ]/g, "").slice(0, 50);
+    }
+    if (name === "officialEmailUser") {
+      value = value.replace(/[^a-zA-Z0-9.]/g, "").slice(0, 50);
+    }
+    if (name === "personalEmail") {
+      value = value.replace(/[^a-zA-Z0-9.@]/g, "").slice(0, 100);
+    }
 
     setFormData((prevFormData) => {
       if (name === "department") {
@@ -231,6 +245,7 @@ export default function HRForm({
                 value={formData.name}
                 onChange={handleChange}
                 placeholder="Enter employee name"
+                maxLength={50}
               />
               {errors.name ? <p className="hr-form-error">{errors.name}</p> : null}
             </label>
@@ -244,6 +259,7 @@ export default function HRForm({
                 value={formData.employeePhoneNumber}
                 onChange={handleChange}
                 placeholder="Enter 10-digit phone number"
+                maxLength={10}
               />
               {errors.employeePhoneNumber ? (
                 <p className="hr-form-error">{errors.employeePhoneNumber}</p>
@@ -259,6 +275,7 @@ export default function HRForm({
                 value={formData.personalEmail}
                 onChange={handleChange}
                 placeholder="name@example.com"
+                maxLength={100}
               />
               {errors.personalEmail ? (
                 <p className="hr-form-error">{errors.personalEmail}</p>
@@ -276,6 +293,7 @@ export default function HRForm({
                   onChange={handleChange}
                   placeholder="username"
                   autoComplete="off"
+                  maxLength={50}
                 />
                 <span className="hr-form-email-domain">
                   {explicitOfficialEmailDomain}

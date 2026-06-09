@@ -263,11 +263,14 @@ def verify_profile_update(request):
             user.first_name = parts[0]
             user.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
         
-        if email and email != current_email:
-            if User.objects.filter(email=email).exclude(id=user.id).exists():
-                return JsonResponse({"message": "The new email is already in use by another user."}, status=400)
-            user.email = email
-            user.username = email
+        if email is not None:
+            if not email:
+                return JsonResponse({"message": "Email cannot be empty."}, status=400)
+            if email != current_email:
+                if User.objects.filter(email=email).exclude(id=user.id).exists():
+                    return JsonResponse({"message": "The new email is already in use by another user."}, status=400)
+                user.email = email
+                user.username = email
         
         if password:
             user.set_password(password)

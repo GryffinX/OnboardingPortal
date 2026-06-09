@@ -314,28 +314,29 @@ def finalize_onboarding(request):
             # Create/Update profile
             profile, created = UserProfile.objects.update_or_create(
                 user=user, 
-                defaults={"role": "Employee", "department": dept, "employee_code": employee_code}
+                defaults={"role": "Employee", "department": dept, "employee_code": employee_code, "phone_number": phone}
             )
             profile.full_clean()
             profile.save()
 
             # Send email only to new users with FULL DETAILS
             try:
+                from .utils import sanitize_for_email
                 # Prepare software lists for email
-                pre_sw = ", ".join(parse_software_list(onb_req.pre_installed_software)) if onb_req else "Standard Pre-installed"
-                emp_sw = ", ".join(parse_software_list(onb_req.employee_installed_software)) if onb_req else "Standard Employee Setup"
-                mgr_sw = ", ".join(parse_software_list(onb_req.manager_software)) if onb_req else "N/A"
-                asset_code = onb_req.asset_code if onb_req else "Pending"
-                official_email = onb_req.official_email if onb_req else email
+                pre_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.pre_installed_software))) if onb_req else "Standard Pre-installed"
+                emp_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.employee_installed_software))) if onb_req else "Standard Employee Setup"
+                mgr_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.manager_software))) if onb_req else "N/A"
+                asset_code = sanitize_for_email(onb_req.asset_code) if onb_req else "Pending"
+                official_email = sanitize_for_email(onb_req.official_email) if onb_req else email
 
                 body_lines = [
-                    f"Hello {name},",
+                    f"Hello {sanitize_for_email(name)},",
                     "",
                     "Congratulations! Your onboarding has been fully approved.",
                     "Your institutional account and IT profile have been created successfully.",
                     "",
                     "--- ACCOUNT DETAILS ---",
-                    f"Employee Code: {employee_code}",
+                    f"Employee Code: {sanitize_for_email(employee_code)}",
                     f"Official Email: {official_email}",
                     f"Default Password: {default_password}",
                     "Please log in and change your password immediately via the 'Forgot Password' link.",
@@ -347,9 +348,9 @@ def finalize_onboarding(request):
                     f"Additional Software (Manager requested): {mgr_sw}",
                     "",
                     "--- REPORTING STRUCTURE ---",
-                    f"Department: {department_name}",
-                    f"Line Manager: {onb_req.line_manager if onb_req else 'N/A'}",
-                    f"HOD: {onb_req.hod if onb_req else 'N/A'}",
+                    f"Department: {sanitize_for_email(department_name)}",
+                    f"Line Manager: {sanitize_for_email(onb_req.line_manager) if onb_req else 'N/A'}",
+                    f"HOD: {sanitize_for_email(onb_req.hod) if onb_req else 'N/A'}",
                     "",
                     "Regards,",
                     "Institutional HR Team"

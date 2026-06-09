@@ -649,7 +649,7 @@ function App() {
       </header>
 
       <main className="app-main">
-        {isAuthenticated && ![pages.submit, myProfileKey].includes(currentPage) && <SummaryStrip requests={userFilteredRequests} />}
+        {isAuthenticated && ![pages.submit, myProfileKey].includes(currentPage) && normalizeRole(currentUser?.role) !== "Employee" && <SummaryStrip requests={userFilteredRequests} />}
         <AppNotice notice={notice} onClear={() => setNotice(null)} />
 
         <PageErrorBoundary key={currentPage}>

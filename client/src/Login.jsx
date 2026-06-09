@@ -43,7 +43,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
     setMessage(null);
     try {
       const result = await onForgotPassword(email);
-      if (result.success) {
+      if (result.ok) {
         setView("otp");
         showMessage("OTP sent to your email. Please check your inbox.", "success");
       } else {
@@ -66,7 +66,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
     setMessage(null);
     try {
       const result = await onVerifyOtp(email, otp);
-      if (result.success) {
+      if (result.ok) {
         setView("reset");
         showMessage("OTP verified. Please set your new password.", "success");
       } else {
@@ -93,7 +93,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
     setMessage(null);
     try {
       const result = await onResetPassword(email, otp, password);
-      if (result.success) {
+      if (result) {
         setView("login");
         setEmail("");
         setOtp("");
@@ -142,9 +142,10 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value.replace(/[^a-zA-Z0-9.@]/g, "").slice(0, 100))}
                 placeholder="user@example.com"
                 required
+                maxLength={100}
               />
             </div>
             <div className="form-group">
@@ -152,9 +153,10 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value.slice(0, 100))}
                 placeholder="••••••••"
                 required
+                maxLength={100}
               />
             </div>
             <div className="forgot-link">
@@ -182,9 +184,10 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value.slice(0, 100))}
                 placeholder="Enter your email"
                 required
+                maxLength={100}
               />
             </div>
             <button type="submit" className="login-button" disabled={loading}>
@@ -212,7 +215,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
               <input
                 type="text"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value)}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="Enter 6-digit OTP"
                 maxLength="6"
                 required
@@ -243,9 +246,10 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value.slice(0, 100))}
                 placeholder="••••••••"
                 required
+                maxLength={100}
               />
             </div>
             <div className="form-group">
@@ -253,9 +257,10 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
               <input
                 type="password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={(e) => setConfirmPassword(e.target.value.slice(0, 100))}
                 placeholder="••••••••"
                 required
+                maxLength={100}
               />
             </div>
             <button type="submit" className="login-button" disabled={loading}>

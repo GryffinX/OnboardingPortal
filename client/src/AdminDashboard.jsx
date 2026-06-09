@@ -364,10 +364,10 @@ const AdminDashboard = ({
             <div className="modal-topbar"><div><h3>Add New User</h3><p>Assign a role and grant access</p></div><button className="ghost-button" onClick={() => setShowModal(null)}>✕</button></div>
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleAddSubmit} style={{ display: "grid", gap: "16px" }}>
-                <div className="form-group"><label>Full Name</label><input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} className="dashboard-search" /></div>
-                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: e.target.value })} className="dashboard-search" placeholder="e.g. 1001" /></div>
-                <div className="form-group"><label>Email Address</label><input type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className="dashboard-search" /></div>
-                <div className="form-group"><label>Phone Number</label><input type="text" value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })} className="dashboard-search" placeholder="10-digit number" /></div>
+                <div className="form-group"><label>Full Name</label><input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value.replace(/[^a-zA-Z ]/g, "").slice(0, 50) })} className="dashboard-search" maxLength={50} /></div>
+                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: e.target.value.slice(0, 50) })} className="dashboard-search" placeholder="e.g. 1001" maxLength={50} /></div>
+                <div className="form-group"><label>Email Address</label><input type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value.replace(/[^a-zA-Z0-9.@]/g, "").slice(0, 100) })} className="dashboard-search" maxLength={100} /></div>
+                <div className="form-group"><label>Phone Number</label><input type="text" required value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value.replace(/\D/g, "").slice(0, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
                 <div className="form-group"><label>Role</label><select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className="dashboard-search">{roles.slice(1).map((role) => <option key={role} value={role}>{role}</option>)}</select></div>
                 <div className="form-group"><label>Department</label><select required value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className="dashboard-search"><option value="">Select Dept</option>{departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}</select></div>
                 <div className="form-group"><label>Initial Password</label><input type="password" required value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="dashboard-search" placeholder="••••••••" /></div>
@@ -384,11 +384,25 @@ const AdminDashboard = ({
             <div className="modal-topbar"><div><h3>Edit User</h3><p>Update user details or role</p></div><button className="ghost-button" onClick={() => setShowModal(null)}>✕</button></div>
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleEditUserSubmit} style={{ display: "grid", gap: "16px" }}>
-                <div className="form-group"><label>Full Name</label><input type="text" required value={editingUser.name} onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })} className="dashboard-search" /></div>
-                <div className="form-group"><label>Employee Code</label><input type="text" required value={editingUser.employeeCode} onChange={(e) => setEditingUser({ ...editingUser, employeeCode: e.target.value })} className="dashboard-search" /></div>
-                <div className="form-group"><label>Email Address</label><input type="email" required value={editingUser.email} onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })} className="dashboard-search" /></div>
-                <div className="form-group"><label>Phone Number</label><input type="text" value={editingUser.phoneNumber} onChange={(e) => setEditingUser({ ...editingUser, phoneNumber: e.target.value })} className="dashboard-search" placeholder="10-digit number" /></div>
-                <div className="form-group"><label>Role</label><select value={editingUser.role} onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })} className="dashboard-search">{roles.slice(1).map((role) => <option key={role} value={role}>{role}</option>)}</select></div>
+                <div className="form-group"><label>Full Name</label><input type="text" required value={editingUser.name} onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value.replace(/[^a-zA-Z ]/g, "").slice(0, 50) })} className="dashboard-search" maxLength={50} /></div>
+                <div className="form-group"><label>Employee Code</label><input type="text" required value={editingUser.employeeCode} onChange={(e) => setEditingUser({ ...editingUser, employeeCode: e.target.value.slice(0, 50) })} className="dashboard-search" maxLength={50} /></div>
+                <div className="form-group"><label>Email Address</label><input type="email" required value={editingUser.email} onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value.replace(/[^a-zA-Z0-9.@]/g, "").slice(0, 100) })} className="dashboard-search" maxLength={100} /></div>
+                <div className="form-group"><label>Phone Number</label><input type="text" required value={editingUser.phoneNumber} onChange={(e) => setEditingUser({ ...editingUser, phoneNumber: e.target.value.replace(/\D/g, "").slice(0, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
+                <div className="form-group">
+                  <label>Role</label>
+                  <select 
+                    value={editingUser.role} 
+                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })} 
+                    className="dashboard-search"
+                    disabled={editingUser.originalRole === "Admin"}
+                    title={editingUser.originalRole === "Admin" ? "Admin roles cannot be modified." : ""}
+                  >
+                    {roles.slice(1).map((role) => <option key={role} value={role}>{role}</option>)}
+                  </select>
+                  {editingUser.originalRole === "Admin" && (
+                    <p style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "4px" }}>Admin roles are protected and cannot be changed.</p>
+                  )}
+                </div>
                 <div className="form-group"><label>Department</label><select required value={editingUser.department} onChange={(e) => setEditingUser({ ...editingUser, department: e.target.value })} className="dashboard-search"><option value="">Select Dept</option>{departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}</select></div>
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><label style={{ margin: 0 }}>Active Account</label><input type="checkbox" checked={editingUser.isActive} onChange={(e) => setEditingUser({ ...editingUser, isActive: e.target.checked })} /></div>
                 <div className="form-group"><label>Change Password (Optional)</label><input type="password" value={editingUser.password} onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })} className="dashboard-search" placeholder="Leave blank to keep current" /></div>
