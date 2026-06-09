@@ -65,6 +65,8 @@ Onboarding-App/
     - **Managers/HODs**: Actionable queues with real-time, context-aware notification badges that only appear when an action is required by that specific role.
     - **HR**: Global intervention capabilities ("Stop Case", "Edit & Re-submit").
     - **Admins**: "Institutional Overrides" for ID corrections and a powerful "Delete Permanently" feature that purges request records and their associated user profiles in a cascading action.
+- **Data Privacy & Compliance**: 
+    - **PII Scrubbing**: If an onboarding case is explicitly "Stopped" by HR (e.g. candidate withdrawal), all Personally Identifiable Information (PII) including personal emails and mobile numbers are permanently anonymized and scrubbed from the database, and any provisioned User account is cascade-deleted.
 - **Global Audit & History**: The "All Requests" tab provides HR, Managers, and Admins with sub-filtered views for **WIP**, **HR Review**, **Stopped**, and **Approved** history, complete with global search integration.
 - **Secure Profile Management**: OTP-secured updates for personal emails, mobile numbers, and passwords.
 - **Rich Provisioning**: Automated welcome emails dispatched upon final approval containing full IT inventory, Employee Code, and reporting structure.

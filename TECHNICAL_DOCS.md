@@ -13,7 +13,7 @@ The system manages a strictly validated linear workflow, ensuring institutional 
 2.  **`hod_review`**: Set after Line Manager approval. Requires a mandatory approval comment from the HOD.
 3.  **`hr_review`**: A "correction" state if a request is sent back to HR for details. Accessible via the "HR Review" sub-filter.
 4.  **`approved`**: Terminal state (Success). Triggered by HOD, automatically allots a sequential 4-digit **Employee Code**.
-5.  **`stopped`**: Terminal state (Failure). Triggered by HR for offer decline/withdrawal.
+5.  **`stopped`**: Terminal state (Failure). Triggered by HR for offer decline/withdrawal. **Data Privacy Trigger:** Automatically scrubs Personal Email, Phone Number, and ID codes to ensure data hygiene.
 
 ### The Feedback loop
 *   **Action-Aware Badges**: Navigation tabs display amber badges indicating the number of requests strictly awaiting the current user's action. HODs do not see badges for requests still in `manager_review`, preventing visual clutter.
