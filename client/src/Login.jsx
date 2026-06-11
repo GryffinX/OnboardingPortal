@@ -142,7 +142,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value.replace(/[^a-zA-Z0-9.@]/g, "").slice(0, 100))}
+                onChange={(e) => setEmail(e.target.value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100))}
                 placeholder="user@example.com"
                 required
                 maxLength={100}

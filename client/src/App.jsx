@@ -273,6 +273,14 @@ function ProfileDashboard({ user, request, onUpdateProfile, onShowNotice }) {
               <span>Official Email</span>
               <strong>{request.officialEmail || "Pending Creation"}</strong>
             </div>
+            {request.laptopModel && (
+              <>
+                <div><span>Laptop Model</span><strong>{request.laptopModel}</strong></div>
+                <div><span>Processor</span><strong>{request.laptopProcessor}</strong></div>
+                <div><span>RAM</span><strong>{request.laptopRam}</strong></div>
+                <div><span>Storage</span><strong>{request.laptopStorage}</strong></div>
+              </>
+            )}
           </div>
 
           <SoftwareSection
@@ -364,6 +372,10 @@ function App() {
       allowed.push(pages.manager);
     } else if (role === "HOD") {
       allowed.push(pages.hod);
+    } else if (role === "Infrastructure Admin") {
+      allowed.push(pages.infraAdmin);
+    } else if (role === "Infrastructure Executive") {
+      allowed.push(pages.infraExecutive);
     } else {
       allowed.push(pages.status); // Default for General Employee
     }
@@ -372,8 +384,10 @@ function App() {
     if (role === "Admin" && !allowed.includes(pages.admin)) allowed.push(pages.admin);
     if (role === "Manager" && !allowed.includes(pages.manager)) allowed.push(pages.manager);
     if (role === "HOD" && !allowed.includes(pages.hod)) allowed.push(pages.hod);
+    if (role === "Infrastructure Admin" && !allowed.includes(pages.infraAdmin)) allowed.push(pages.infraAdmin);
+    if (role === "Infrastructure Executive" && !allowed.includes(pages.infraExecutive)) allowed.push(pages.infraExecutive);
     
-    if (role === "Manager" || role === "HOD" || role === "HR" || isHrDept) {
+    if (role === "Manager" || role === "HOD" || role === "HR" || isHrDept || role === "Infrastructure Admin" || role === "Infrastructure Executive") {
       if (!allowed.includes(pages.requests)) allowed.push(pages.requests);
     }
     
@@ -509,6 +523,12 @@ function App() {
     if (key === pages.hod) {
       return userFilteredRequests.filter(r => r.stage === workflowStages.hod).length;
     }
+    if (key === pages.infraAdmin) {
+      return userFilteredRequests.filter(r => r.stage === workflowStages.infraAdmin).length;
+    }
+    if (key === pages.infraExecutive) {
+      return userFilteredRequests.filter(r => r.stage === workflowStages.infraExecutive).length;
+    }
     if (key === pages.hr) {
       return userFilteredRequests.filter(r => r.stage === workflowStages.hr).length;
     }
@@ -519,6 +539,12 @@ function App() {
       }
       if (role === "HOD") {
         return userFilteredRequests.filter(r => r.stage === workflowStages.hod).length;
+      }
+      if (role === "Infrastructure Admin") {
+        return userFilteredRequests.filter(r => r.stage === workflowStages.infraAdmin).length;
+      }
+      if (role === "Infrastructure Executive") {
+        return userFilteredRequests.filter(r => r.stage === workflowStages.infraExecutive).length;
       }
       if (role === "HR" || isHrDept) {
         return userFilteredRequests.filter(r => r.stage === workflowStages.hr).length;
@@ -578,9 +604,10 @@ function App() {
     if (!currentUser) return [];
     const isHrDept = currentUser.department?.trim().toUpperCase() === "HR";
     const role = normalizeRole(currentUser.role);
-    if (isHrDept || role === "Admin") return requests;
+    if (isHrDept || role === "Admin" || role === "Infrastructure Admin") return requests;
     if (role === "Manager") return requests.filter(r => r.formData.lineManager === currentUser.name);
     if (role === "HOD") return requests.filter(r => r.formData.hod === currentUser.name);
+    if (role === "Infrastructure Executive") return requests.filter(r => r.infraExecutive?.id === currentUser.id);
     return [];
   }, [requests, currentUser]);
 
@@ -603,7 +630,7 @@ function App() {
       filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hr);
     } else if (currentPage === pages.requests || currentPage === pages.admin) {
       if (requestHistoryFilter === "wip") {
-        filtered = userFilteredRequests.filter(r => [workflowStages.manager, workflowStages.hod, workflowStages.hr].includes(r.stage));
+        filtered = userFilteredRequests.filter(r => [workflowStages.manager, workflowStages.hod, workflowStages.hr, workflowStages.infraAdmin, workflowStages.infraExecutive].includes(r.stage));
       } else if (requestHistoryFilter === "hr_review") {
         filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hr);
       } else if (requestHistoryFilter === "stopped") {
@@ -687,6 +714,7 @@ function App() {
                       request={selectedRequest}
                       role={pages.admin}
                       userDepartment={currentUser?.department}
+                      allUsers={allUsers}
                       onShowNotice={showNotice}
                       onSaveSoftware={handleSaveSoftware}
                       onDeleteRequest={(id) => {
@@ -736,6 +764,7 @@ function App() {
                       request={selectedRequest} 
                       role={currentPage} 
                       userDepartment={currentUser?.department}
+                      allUsers={allUsers}
                       onShowNotice={showNotice}
                       onSaveSoftware={handleSaveSoftware}
                       onStartHrEdit={(id) => {
@@ -749,6 +778,14 @@ function App() {
                           if (ok) { showNotice("success", "Approved", "Request forwarded to HOD."); handleRefreshRequests(); }
                           else { showNotice("error", "Error", data.message || "Failed to approve request."); }
                         } else if (currentPage === pages.hod) {
+                          const { ok, data } = await api.saveRequest({ id, stage: workflowStages.infraAdmin });
+                          if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Admin."); handleRefreshRequests(); }
+                          else { showNotice("error", "Error", data.message || "Failed to approve request."); }
+                        } else if (currentPage === pages.infraAdmin) {
+                          const { ok, data } = await api.saveRequest({ id, stage: workflowStages.infraExecutive });
+                          if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Executive."); handleRefreshRequests(); }
+                          else { showNotice("error", "Error", data.message || "Failed to approve request."); }
+                        } else if (currentPage === pages.infraExecutive) {
                           const requestToFinalize = requests.find(r => r.id === id);
                           if (!requestToFinalize) return;
                           

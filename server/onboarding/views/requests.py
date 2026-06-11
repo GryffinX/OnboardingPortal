@@ -55,6 +55,21 @@ def _get_employee_code_by_name(name):
 
 from django.db import transaction
 
+def _serialize_user(user):
+    if not user: return None
+    from ..models import UserProfile
+    employee_code = ""
+    try:
+        employee_code = user.profile.employee_code or ""
+    except UserProfile.DoesNotExist:
+        pass
+        
+    return {
+        "id": user.id,
+        "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+        "employeeCode": employee_code
+    }
+
 def serialize_request(record):
     subject_code = record.employee_code or ""
     if not subject_code:
@@ -100,6 +115,14 @@ def serialize_request(record):
         "revisionCount": record.revision_count,
         "managerApprovedAt": record.manager_approved_at,
         "hodApprovedAt": record.hod_approved_at,
+        
+        # New Infrastructure Fields
+        "infraAdminComment": record.infra_admin_comment,
+        "infraExecutive": _serialize_user(record.infra_executive),
+        "laptopModel": record.laptop_model,
+        "laptopRam": record.laptop_ram,
+        "laptopStorage": record.laptop_storage,
+        "laptopProcessor": record.laptop_processor,
     }
 
 
@@ -196,6 +219,26 @@ def save_request(request):
                 
                 if "hodComment" in payload:
                     req.hod_comment = (payload["hodComment"] or "").strip()
+                
+                if "infraAdminComment" in payload:
+                    req.infra_admin_comment = (payload["infraAdminComment"] or "").strip()
+                
+                if "infraExecutive" in payload:
+                    from django.contrib.auth.models import User
+                    exec_id = payload["infraExecutive"]
+                    if exec_id:
+                        req.infra_executive = User.objects.filter(id=exec_id).first()
+                    else:
+                        req.infra_executive = None
+                
+                if "laptopModel" in payload:
+                    req.laptop_model = (payload["laptopModel"] or "").strip()
+                if "laptopRam" in payload:
+                    req.laptop_ram = (payload["laptopRam"] or "").strip()
+                if "laptopStorage" in payload:
+                    req.laptop_storage = (payload["laptopStorage"] or "").strip()
+                if "laptopProcessor" in payload:
+                    req.laptop_processor = (payload["laptopProcessor"] or "").strip()
                 
                 if "stopReason" in payload:
                     req.stop_reason = (payload["stopReason"] or "").strip()

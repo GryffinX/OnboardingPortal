@@ -19,6 +19,7 @@ function RequestDetailPanel({
   request,
   role,
   userDepartment,
+  allUsers = [],
   onApprove,
   onSendToHr,
   onSaveSoftware,
@@ -30,6 +31,14 @@ function RequestDetailPanel({
   const [softwareDraft, setSoftwareDraft] = useState(() => getInitialSoftwareDraft(request, role));
   const [assetCodeDraft, setAssetCodeDraft] = useState(() => request?.assetCode || "");
   const [hodCommentDraft, setHodCommentDraft] = useState(() => request?.hodComment || "");
+  
+  const [infraAdminCommentDraft, setInfraAdminCommentDraft] = useState(() => request?.infraAdminComment || "");
+  const [infraExecutiveDraft, setInfraExecutiveDraft] = useState(() => request?.infraExecutive?.id || "");
+  const [laptopModelDraft, setLaptopModelDraft] = useState(() => request?.laptopModel || "");
+  const [laptopRamDraft, setLaptopRamDraft] = useState(() => request?.laptopRam || "");
+  const [laptopStorageDraft, setLaptopStorageDraft] = useState(() => request?.laptopStorage || "");
+  const [laptopProcessorDraft, setLaptopProcessorDraft] = useState(() => request?.laptopProcessor || "");
+
   const [assetCodeError, setAssetCodeError] = useState("");
   const assetCodeRef = useRef(null);
 
@@ -72,10 +81,12 @@ function RequestDetailPanel({
   const stageMeta = getStageMeta(request.stage);
   const isManagerStep = role === pages.manager && request.stage === workflowStages.manager;
   const isHodStep = role === pages.hod && request.stage === workflowStages.hod;
+  const isInfraAdminStep = role === pages.infraAdmin && request.stage === workflowStages.infraAdmin;
+  const isInfraExecutiveStep = role === pages.infraExecutive && request.stage === workflowStages.infraExecutive;
   const isHrDept = String(userDepartment).trim().toUpperCase() === "HR";
   const isHrRole = role === pages.hr;
   const isHrStep = isHrRole && request.stage === workflowStages.hr;
-  const canAct = isManagerStep || isHodStep;
+  const canAct = isManagerStep || isHodStep || isInfraAdminStep || isInfraExecutiveStep;
   const canHrStop = isHrDept && typeof onStopCase === "function" && request.stage !== workflowStages.approved && request.stage !== workflowStages.stopped;
   const canHrEdit = isHrDept && isHrStep && typeof onStartHrEdit === "function";
 
@@ -120,6 +131,43 @@ function RequestDetailPanel({
     });
   };
 
+  const handleSaveInfraAdminComment = () => {
+    if (infraAdminCommentDraft) {
+      const error = validateCommentInput(infraAdminCommentDraft, "Comment");
+      if (error) {
+        onShowNotice?.("error", "Validation Error", error);
+        return;
+      }
+    }
+    if (!infraExecutiveDraft) {
+      onShowNotice?.("error", "Validation Error", "Please assign an Infrastructure Executive.");
+      return;
+    }
+    onSaveSoftware?.(request.id, [], role, {
+      infraAdminComment: infraAdminCommentDraft,
+      infraExecutive: infraExecutiveDraft,
+    });
+  };
+
+  const handleSaveInfraExecutiveSpecs = () => {
+    const errorModel = validateGenericInput(laptopModelDraft, "Laptop Model");
+    const errorRam = validateGenericInput(laptopRamDraft, "Laptop RAM");
+    const errorStorage = validateGenericInput(laptopStorageDraft, "Laptop Storage");
+    const errorProcessor = validateGenericInput(laptopProcessorDraft, "Laptop Processor");
+    
+    if (errorModel || errorRam || errorStorage || errorProcessor) {
+      onShowNotice?.("error", "Validation Error", errorModel || errorRam || errorStorage || errorProcessor);
+      return;
+    }
+    
+    onSaveSoftware?.(request.id, [], role, {
+      laptopModel: laptopModelDraft,
+      laptopRam: laptopRamDraft,
+      laptopStorage: laptopStorageDraft,
+      laptopProcessor: laptopProcessorDraft,
+    });
+  };
+
   const handleApproveClick = () => {
     if (role === pages.manager) {
       if (!request.assetCode && !assetCodeDraft) {
@@ -140,6 +188,33 @@ function RequestDetailPanel({
       }
       if (hodCommentDraft && hodCommentDraft !== request.hodComment) {
         onShowNotice?.("error", "Validation Error", "Please click 'Save Comment' before approving.");
+        return;
+      }
+    }
+    
+    if (role === pages.infraAdmin) {
+      if (!request.infraExecutive && !infraExecutiveDraft) {
+        onShowNotice?.("error", "Validation Error", "An Infrastructure Executive assignment is required.");
+        return;
+      }
+      if (infraExecutiveDraft && infraExecutiveDraft !== request.infraExecutive?.id) {
+        onShowNotice?.("error", "Validation Error", "Please click 'Save Assignment & Comment' before approving.");
+        return;
+      }
+    }
+    
+    if (role === pages.infraExecutive) {
+      if (!request.laptopModel || !request.laptopRam || !request.laptopStorage || !request.laptopProcessor) {
+        onShowNotice?.("error", "Validation Error", "All laptop specifications must be saved before approving.");
+        return;
+      }
+      if (
+        laptopModelDraft !== request.laptopModel || 
+        laptopRamDraft !== request.laptopRam || 
+        laptopStorageDraft !== request.laptopStorage || 
+        laptopProcessorDraft !== request.laptopProcessor
+      ) {
+        onShowNotice?.("error", "Validation Error", "Please click 'Save Specifications' before approving.");
         return;
       }
     }
@@ -269,13 +344,19 @@ function RequestDetailPanel({
 
       {canAct && (
         <section className="software-input-card">
-          <h4>{role === pages.manager ? "Add/Edit Software List" : "Add comments"}</h4>
+          <h4>
+            {role === pages.manager ? "Add/Edit Software List" : 
+             role === pages.hod ? "Add comments" : 
+             role === pages.infraAdmin ? "Assign Infrastructure Executive" : 
+             role === pages.infraExecutive ? "Assign Hardware Specifications" : ""}
+          </h4>
           <p>
-            {role === pages.manager
-              ? "List any additional software and asset code needed for this employee."
-              : "Add a comment for approval."}
+            {role === pages.manager ? "List any additional software and asset code needed for this employee." : 
+             role === pages.hod ? "Add a comment for approval." : 
+             role === pages.infraAdmin ? "Provide instructions and assign an executive for hardware provisioning." : 
+             role === pages.infraExecutive ? "Enter the specifications of the assigned laptop." : ""}
           </p>
-          {role === pages.manager ? (
+          {role === pages.manager && (
             <>
               <textarea
                 value={softwareDraft}
@@ -320,7 +401,9 @@ function RequestDetailPanel({
                 </button>
               </div>
             </>
-          ) : (
+          )}
+
+          {role === pages.hod && (
             <>
               <textarea
                 value={hodCommentDraft}
@@ -335,6 +418,106 @@ function RequestDetailPanel({
                   onClick={handleSaveHodComment}
                 >
                   Save Comment
+                </button>
+              </div>
+            </>
+          )}
+
+          {role === pages.infraAdmin && (
+            <>
+              <textarea
+                value={infraAdminCommentDraft}
+                onChange={(event) => setInfraAdminCommentDraft(event.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 500))}
+                placeholder="Add instructions for the Infra Executive"
+                maxLength={500}
+              />
+              <div style={{ marginTop: "12px" }}>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "0.85rem", fontWeight: "600", color: "#475569" }}>
+                  Assign Executive
+                </label>
+                <select
+                  className="dashboard-search"
+                  value={infraExecutiveDraft}
+                  onChange={(e) => setInfraExecutiveDraft(e.target.value)}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">-- Select Executive --</option>
+                  {allUsers
+                    .filter(u => u.role === "Infrastructure Executive" && u.isActive)
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} {u.employeeCode ? `(${u.employeeCode})` : ""}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="detail-actions detail-actions-compact">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleSaveInfraAdminComment}
+                >
+                  Save Assignment & Comment
+                </button>
+              </div>
+            </>
+          )}
+
+          {role === pages.infraExecutive && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div className="form-group">
+                  <label>Laptop Model</label>
+                  <input
+                    type="text"
+                    className="dashboard-search"
+                    value={laptopModelDraft}
+                    onChange={(e) => setLaptopModelDraft(e.target.value.slice(0, 100))}
+                    placeholder="e.g. ThinkPad T14"
+                    maxLength={100}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Processor</label>
+                  <input
+                    type="text"
+                    className="dashboard-search"
+                    value={laptopProcessorDraft}
+                    onChange={(e) => setLaptopProcessorDraft(e.target.value.slice(0, 100))}
+                    placeholder="e.g. Intel Core i7"
+                    maxLength={100}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>RAM</label>
+                  <input
+                    type="text"
+                    className="dashboard-search"
+                    value={laptopRamDraft}
+                    onChange={(e) => setLaptopRamDraft(e.target.value.slice(0, 50))}
+                    placeholder="e.g. 16GB DDR4"
+                    maxLength={50}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Storage</label>
+                  <input
+                    type="text"
+                    className="dashboard-search"
+                    value={laptopStorageDraft}
+                    onChange={(e) => setLaptopStorageDraft(e.target.value.slice(0, 50))}
+                    placeholder="e.g. 512GB SSD"
+                    maxLength={50}
+                  />
+                </div>
+              </div>
+              <div className="detail-actions detail-actions-compact" style={{ marginTop: "16px" }}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleSaveInfraExecutiveSpecs}
+                >
+                  Save Specifications
                 </button>
               </div>
             </>

@@ -16,6 +16,8 @@ def normalize_role(role):
         "admin": "Admin",
         "manager": "Manager",
         "hod": "HOD",
+        "infrastructure admin": "Infrastructure Admin",
+        "infrastructure executive": "Infrastructure Executive",
         "employee": "Employee",
     }
 

@@ -132,6 +132,16 @@ class OnboardingRequest(models.Model):
     
     manager_approved_at = models.CharField(max_length=50, blank=True)
     hod_approved_at = models.CharField(max_length=50, blank=True)
+    
+    # Infrastructure Workflow
+    infra_admin_comment = models.TextField(blank=True, validators=[validate_comment_text])
+    infra_executive = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_infra_tasks")
+    
+    # Laptop Specifications
+    laptop_model = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
+    laptop_ram = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
+    laptop_storage = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
+    laptop_processor = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
 
     def clean(self):
         validate_employee_name(self.employee_name)
@@ -142,9 +152,14 @@ class OnboardingRequest(models.Model):
         validate_generic_text(self.hod)
         if self.asset_code: validate_generic_text(self.asset_code)
         if self.hod_comment: validate_comment_text(self.hod_comment)
+        if self.infra_admin_comment: validate_comment_text(self.infra_admin_comment)
         if self.stop_reason: validate_comment_text(self.stop_reason)
         if self.review_requested_by: validate_generic_text(self.review_requested_by)
         if self.review_reason: validate_comment_text(self.review_reason)
+        if self.laptop_model: validate_generic_text(self.laptop_model)
+        if self.laptop_ram: validate_generic_text(self.laptop_ram)
+        if self.laptop_storage: validate_generic_text(self.laptop_storage)
+        if self.laptop_processor: validate_generic_text(self.laptop_processor)
 
     def save(self, *args, **kwargs):
         self.full_clean()

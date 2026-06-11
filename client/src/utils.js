@@ -64,6 +64,12 @@ export function buildRequest(id, formData, overrides = {}) {
     employeeInstalledSoftware: normalizeSoftwareItems(overrides.employeeInstalledSoftware),
     assetCode: overrides.assetCode || "",
     hodComment: overrides.hodComment || "",
+    infraAdminComment: overrides.infraAdminComment || "",
+    infraExecutive: overrides.infraExecutive || null,
+    laptopModel: overrides.laptopModel || "",
+    laptopRam: overrides.laptopRam || "",
+    laptopStorage: overrides.laptopStorage || "",
+    laptopProcessor: overrides.laptopProcessor || "",
     stopReason: overrides.stopReason || "",
     reviewRequestedBy: overrides.reviewRequestedBy || "",
     reviewReason: overrides.reviewReason || "",
@@ -169,6 +175,12 @@ export function normalizeRequestRecord(request, fallbackId = 0) {
     ),
     assetCode: request?.assetCode || request?.asset_code || "",
     hodComment: request?.hodComment || request?.hod_comment || "",
+    infraAdminComment: request?.infraAdminComment || request?.infra_admin_comment || "",
+    infraExecutive: request?.infraExecutive || request?.infra_executive || null,
+    laptopModel: request?.laptopModel || request?.laptop_model || "",
+    laptopRam: request?.laptopRam || request?.laptop_ram || "",
+    laptopStorage: request?.laptopStorage || request?.laptop_storage || "",
+    laptopProcessor: request?.laptopProcessor || request?.laptop_processor || "",
     stopReason: request?.stopReason || request?.stop_reason || "",
     reviewRequestedBy: request?.reviewRequestedBy || request?.review_requested_by,
     reviewReason: request?.reviewReason || request?.review_reason,
@@ -201,6 +213,22 @@ export function getStageMeta(stage) {
       label: "Pending HOD",
       tone: "hod",
       description: "Waiting for HOD approval",
+    };
+  }
+
+  if (stage === workflowStages.infraAdmin) {
+    return {
+      label: "Pending Infra Admin",
+      tone: "pending",
+      description: "Waiting for Infrastructure Admin assignment",
+    };
+  }
+
+  if (stage === workflowStages.infraExecutive) {
+    return {
+      label: "Pending Infra Exec",
+      tone: "hod",
+      description: "Waiting for Infrastructure Executive hardware assignment",
     };
   }
 
@@ -273,6 +301,8 @@ export function normalizeRole(role) {
     admin: "Admin",
     manager: "Manager",
     hod: "HOD",
+    "infrastructure admin": "Infrastructure Admin",
+    "infrastructure executive": "Infrastructure Executive",
     employee: "Employee",
   };
 

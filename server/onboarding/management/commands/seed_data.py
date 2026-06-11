@@ -56,5 +56,31 @@ class Command(BaseCommand):
             dept_hr = Department.objects.get(name="HR")
             UserProfile.objects.create(user=admin, role="Admin", department=dept_hr)
             self.stdout.write(self.style.SUCCESS("Created admin user: admin@securitas-india.com / adminpassword123"))
+
+        # 4. Ensure Infra Admin exists
+        if not User.objects.filter(username="infra.admin@securitas-india.com").exists():
+            infra_admin = User.objects.create_user(
+                username="infra.admin@securitas-india.com",
+                email="infra.admin@securitas-india.com",
+                password="infrapassword123",
+                first_name="Infrastructure",
+                last_name="Admin"
+            )
+            dept_it = Department.objects.get(name="IT")
+            UserProfile.objects.create(user=infra_admin, role="Infrastructure Admin", department=dept_it, phone_number="9999999991")
+            self.stdout.write(self.style.SUCCESS("Created infra admin user: infra.admin@securitas-india.com"))
+
+        # 5. Ensure Infra Executive exists
+        if not User.objects.filter(username="infra.exec@securitas-india.com").exists():
+            infra_exec = User.objects.create_user(
+                username="infra.exec@securitas-india.com",
+                email="infra.exec@securitas-india.com",
+                password="infrapassword123",
+                first_name="Infrastructure",
+                last_name="Executive"
+            )
+            dept_it = Department.objects.get(name="IT")
+            UserProfile.objects.create(user=infra_exec, role="Infrastructure Executive", department=dept_it, phone_number="9999999992")
+            self.stdout.write(self.style.SUCCESS("Created infra exec user: infra.exec@securitas-india.com"))
         
         self.stdout.write(self.style.SUCCESS("Database seeding completed successfully."))
