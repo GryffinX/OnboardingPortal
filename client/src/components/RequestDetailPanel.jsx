@@ -31,6 +31,7 @@ function RequestDetailPanel({
   const [softwareDraft, setSoftwareDraft] = useState(() => getInitialSoftwareDraft(request, role));
   const [assetCodeDraft, setAssetCodeDraft] = useState(() => request?.assetCode || "");
   const [hodCommentDraft, setHodCommentDraft] = useState(() => request?.hodComment || "");
+  const [dateOfJoiningDraft, setDateOfJoiningDraft] = useState(() => request?.dateOfJoining || "");
   
   const [infraAdminCommentDraft, setInfraAdminCommentDraft] = useState(() => request?.infraAdminComment || "");
   const [infraExecutiveDraft, setInfraExecutiveDraft] = useState(() => request?.infraExecutive?.id || "");
@@ -115,6 +116,7 @@ function RequestDetailPanel({
     
     onSaveSoftware?.(request.id, normalizeSoftwareList(softwareDraft), role, {
       assetCode: assetCodeDraft,
+      dateOfJoining: dateOfJoiningDraft,
     });
   };
 
@@ -243,6 +245,10 @@ function RequestDetailPanel({
           <strong>{request.employeeCode || "Pending Assignment"}</strong>
         </div>
         <div>
+          <span>Date of Joining</span>
+          <strong>{request.dateOfJoining || "Pending"}</strong>
+        </div>
+        <div>
           <span>Phone Number</span>
           <strong>{request.formData.employeePhoneNumber}</strong>
         </div>
@@ -364,32 +370,43 @@ function RequestDetailPanel({
                 placeholder="Example: Tableau, Figma, Adobe Acrobat"
                 maxLength={500}
               />
-              <div ref={assetCodeRef} style={{ position: "relative", marginTop: "12px" }}>
-                <input
-                  type="text"
-                  className="dashboard-search"
-                  style={{ 
-                    width: "100%",
-                    border: displayAssetCodeError ? "1px solid #ef4444" : "1px solid #e2e8f0"
-                  }}
-                  value={assetCodeDraft}
-                  onChange={(event) => {
-                    setAssetCodeDraft(event.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 100));
-                    if (assetCodeError) setAssetCodeError("");
-                  }}
-                  placeholder="Asset code"
-                  maxLength={100}
-                />
-                {displayAssetCodeError && (
-                  <div style={{ 
-                    color: "#ef4444", 
-                    fontSize: "0.8rem", 
-                    marginTop: "4px",
-                    fontWeight: "500" 
-                  }}>
-                    {displayAssetCodeError}
-                  </div>
-                )}
+              <div ref={assetCodeRef} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type="text"
+                    className="dashboard-search"
+                    style={{ 
+                      width: "100%",
+                      border: displayAssetCodeError ? "1px solid #ef4444" : "1px solid #e2e8f0"
+                    }}
+                    value={assetCodeDraft}
+                    onChange={(event) => {
+                      setAssetCodeDraft(event.target.value.replace(/[%:;"'<>(){}[\]|\\~`^!*+?]/g, "").slice(0, 100));
+                      if (assetCodeError) setAssetCodeError("");
+                    }}
+                    placeholder="Asset code"
+                    maxLength={100}
+                  />
+                  {displayAssetCodeError && (
+                    <div style={{ 
+                      color: "#ef4444", 
+                      fontSize: "0.8rem", 
+                      marginTop: "4px",
+                      fontWeight: "500" 
+                    }}>
+                      {displayAssetCodeError}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <input
+                    type="date"
+                    className="dashboard-search"
+                    style={{ width: "100%" }}
+                    value={dateOfJoiningDraft}
+                    onChange={(event) => setDateOfJoiningDraft(event.target.value)}
+                  />
+                </div>
               </div>
               <div className="detail-actions detail-actions-compact">
                 <button

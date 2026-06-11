@@ -133,6 +133,9 @@ class OnboardingRequest(models.Model):
     manager_approved_at = models.CharField(max_length=50, blank=True)
     hod_approved_at = models.CharField(max_length=50, blank=True)
     
+    # Manager additions
+    date_of_joining = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
+    
     # Infrastructure Workflow
     infra_admin_comment = models.TextField(blank=True, validators=[validate_comment_text])
     infra_executive = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_infra_tasks")

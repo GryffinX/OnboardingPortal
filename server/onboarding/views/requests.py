@@ -115,6 +115,7 @@ def serialize_request(record):
         "revisionCount": record.revision_count,
         "managerApprovedAt": record.manager_approved_at,
         "hodApprovedAt": record.hod_approved_at,
+        "dateOfJoining": record.date_of_joining,
         
         # New Infrastructure Fields
         "infraAdminComment": record.infra_admin_comment,
@@ -251,6 +252,9 @@ def save_request(request):
                 if "managerApprovedAt" in payload: req.manager_approved_at = payload["managerApprovedAt"]
                 if "hodApprovedAt" in payload: req.hod_approved_at = payload["hodApprovedAt"]
                 
+                if "dateOfJoining" in payload:
+                    req.date_of_joining = payload["dateOfJoining"]
+                
                 req.save()
                 return JsonResponse({"message": "Request updated successfully.", "request": serialize_request(req)})
 
@@ -288,6 +292,7 @@ def save_request(request):
                 "revision_count": int(payload.get("revisionCount") or 0),
                 "manager_approved_at": (payload.get("managerApprovedAt") or "").strip(),
                 "hod_approved_at": (payload.get("hodApprovedAt") or "").strip(),
+                "date_of_joining": (payload.get("dateOfJoining") or "").strip(),
             }
 
             record, created = OnboardingRequest.objects.update_or_create(

@@ -76,6 +76,7 @@ export function buildRequest(id, formData, overrides = {}) {
     revisionCount: overrides.revisionCount || 0,
     managerApprovedAt: overrides.managerApprovedAt || "",
     hodApprovedAt: overrides.hodApprovedAt || "",
+    dateOfJoining: overrides.dateOfJoining || "",
   };
 }
 

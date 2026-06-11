@@ -12,6 +12,8 @@ function normalizeRole(role) {
     admin: "Admin",
     manager: "Manager",
     hod: "HOD",
+    "infrastructure admin": "Infrastructure Admin",
+    "infrastructure executive": "Infrastructure Executive",
     employee: "Employee",
   };
 
@@ -41,7 +43,7 @@ const AdminDashboard = ({
   const [newSoftwareCategory, setNewSoftwareCategory] = useState("preinstalled");
   const [isBulkUpdating, setIsLoading] = useState(false);
 
-  const roles = ["All Roles", "Admin", "Manager", "HOD", "Employee"];
+  const roles = ["All Roles", "Admin", "Manager", "HOD", "Infrastructure Admin", "Infrastructure Executive", "Employee"];
 
   const fetchDepts = async () => {
     try {
@@ -368,8 +370,35 @@ const AdminDashboard = ({
                 <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: e.target.value.slice(0, 50) })} className="dashboard-search" placeholder="e.g. 1001" maxLength={50} /></div>
                 <div className="form-group"><label>Email Address</label><input type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100) })} className="dashboard-search" maxLength={100} /></div>
                 <div className="form-group"><label>Phone Number</label><input type="text" required value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value.replace(/\D/g, "").slice(0, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
-                <div className="form-group"><label>Role</label><select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className="dashboard-search">{roles.slice(1).map((role) => <option key={role} value={role}>{role}</option>)}</select></div>
-                <div className="form-group"><label>Department</label><select required value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className="dashboard-search"><option value="">Select Dept</option>{departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}</select></div>
+                <div className="form-group">
+                  <label>Role</label>
+                  <select 
+                    value={newUser.role} 
+                    onChange={(e) => {
+                      const role = e.target.value;
+                      setNewUser({ ...newUser, role, department: role.includes("Infrastructure") ? "Infrastructure" : newUser.department });
+                    }} 
+                    className="dashboard-search"
+                  >
+                    {roles.slice(1).map((role) => <option key={role} value={role}>{role}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Department</label>
+                  <select 
+                    required 
+                    value={newUser.department} 
+                    onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} 
+                    className="dashboard-search"
+                    disabled={newUser.role.includes("Infrastructure")}
+                  >
+                    <option value="">Select Dept</option>
+                    {departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                    {!departments.includes("Infrastructure") && newUser.role.includes("Infrastructure") && (
+                      <option value="Infrastructure">Infrastructure</option>
+                    )}
+                  </select>
+                </div>
                 <div className="form-group"><label>Initial Password</label><input type="password" required value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="dashboard-search" placeholder="••••••••" /></div>
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>Create User</button>
               </form>
@@ -392,7 +421,10 @@ const AdminDashboard = ({
                   <label>Role</label>
                   <select 
                     value={editingUser.role} 
-                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })} 
+                    onChange={(e) => {
+                      const role = e.target.value;
+                      setEditingUser({ ...editingUser, role, department: role.includes("Infrastructure") ? "Infrastructure" : editingUser.department });
+                    }} 
                     className="dashboard-search"
                     disabled={editingUser.originalRole === "Admin"}
                     title={editingUser.originalRole === "Admin" ? "Admin roles cannot be modified." : ""}
@@ -403,7 +435,22 @@ const AdminDashboard = ({
                     <p style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "4px" }}>Admin roles are protected and cannot be changed.</p>
                   )}
                 </div>
-                <div className="form-group"><label>Department</label><select required value={editingUser.department} onChange={(e) => setEditingUser({ ...editingUser, department: e.target.value })} className="dashboard-search"><option value="">Select Dept</option>{departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}</select></div>
+                <div className="form-group">
+                  <label>Department</label>
+                  <select 
+                    required 
+                    value={editingUser.department} 
+                    onChange={(e) => setEditingUser({ ...editingUser, department: e.target.value })} 
+                    className="dashboard-search"
+                    disabled={editingUser.role.includes("Infrastructure")}
+                  >
+                    <option value="">Select Dept</option>
+                    {departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                    {!departments.includes("Infrastructure") && editingUser.role.includes("Infrastructure") && (
+                      <option value="Infrastructure">Infrastructure</option>
+                    )}
+                  </select>
+                </div>
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><label style={{ margin: 0 }}>Active Account</label><input type="checkbox" checked={editingUser.isActive} onChange={(e) => setEditingUser({ ...editingUser, isActive: e.target.checked })} /></div>
                 <div className="form-group"><label>Change Password (Optional)</label><input type="password" value={editingUser.password} onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })} className="dashboard-search" placeholder="Leave blank to keep current" /></div>
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>Save Changes</button>
