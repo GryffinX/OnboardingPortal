@@ -59,10 +59,11 @@ Onboarding-App/
 ## ✨ Key Enterprise Features
 
 - **Automated Identifier Management**: 
-    - Native generation of sequential **4-Digit Employee Codes** (e.g., `1001`, `1002`) automatically allotted upon final HOD approval.
+    - Native generation of sequential **4-Digit Employee Codes** (e.g., `1001`, `1002`) automatically allotted upon final IT approval.
     - Unique **Asset Code** enforcement for hardware assignments across the entire system.
 - **Role-Based Workflows**:
     - **Managers/HODs**: Actionable queues with real-time, context-aware notification badges that only appear when an action is required by that specific role.
+    - **Infrastructure Admin & Executive**: Multi-stage hardware provisioning where Infra Admins assign requests to Executives, who then assign physical assets and specs (Laptop Model, RAM, Storage, Processor) before triggering account creation.
     - **HR**: Global intervention capabilities ("Stop Case", "Edit & Re-submit").
     - **Admins**: "Institutional Overrides" for ID corrections and a powerful "Delete Permanently" feature that purges request records and their associated user profiles in a cascading action.
 - **Data Privacy & Compliance**: 

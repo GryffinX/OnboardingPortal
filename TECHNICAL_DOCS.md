@@ -9,11 +9,13 @@ This document provides a deep dive into the technical architecture, security pro
 The system manages a strictly validated linear workflow, ensuring institutional oversight at every stage.
 
 ### Workflow Stages
-1.  **`manager_review`**: Initial state after HR submission. Requires software requirements and a unique **Asset Code**.
+1.  **`manager_review`**: Initial state after HR submission. Requires software requirements and a unique **Asset Code** draft.
 2.  **`hod_review`**: Set after Line Manager approval. Requires a mandatory approval comment from the HOD.
-3.  **`hr_review`**: A "correction" state if a request is sent back to HR for details. Accessible via the "HR Review" sub-filter.
-4.  **`approved`**: Terminal state (Success). Triggered by HOD, automatically allots a sequential 4-digit **Employee Code**.
-5.  **`stopped`**: Terminal state (Failure). Triggered by HR for offer decline/withdrawal. **Data Privacy Trigger:** Automatically scrubs Personal Email, Phone Number, and ID codes to ensure data hygiene.
+3.  **`infra_admin_review`**: Set after HOD approval. Infrastructure Admin reviews the request, adds instructions, and assigns an Infrastructure Executive.
+4.  **`infra_executive_review`**: Set after Infra Admin assignment. Infrastructure Executive provisions the hardware and enters specs (Model, RAM, Storage, Processor).
+5.  **`hr_review`**: A "correction" state if a request is sent back to HR for details. Accessible via the "HR Review" sub-filter.
+6.  **`approved`**: Terminal state (Success). Triggered by the Infrastructure Executive, automatically allots a sequential 4-digit **Employee Code** and creates the user account.
+7.  **`stopped`**: Terminal state (Failure). Triggered by HR for offer decline/withdrawal. **Data Privacy Trigger:** Automatically scrubs Personal Email, Phone Number, and ID codes to ensure data hygiene.
 
 ### The Feedback loop
 *   **Action-Aware Badges**: Navigation tabs display amber badges indicating the number of requests strictly awaiting the current user's action. HODs do not see badges for requests still in `manager_review`, preventing visual clutter.
@@ -31,7 +33,7 @@ The application implements a multi-layer uniqueness and validation strategy:
 3.  **Backend Logic**: Atomic checks in `onboarding_email`, `save_request`, and `users.py` ensure identifiers (like Hardware Asset Codes and Mobile Numbers) are strictly 1-to-1 mapped across the entire system.
 
 ### Automated Provisioning
-Upon final HOD approval, the system executes an atomic finalization:
+Upon final Infrastructure Executive approval, the system executes an atomic finalization:
 *   **Code Generation**: Queries the database to identify the highest existing 4-digit numeric suffix and increments it sequentially (e.g., `1001` -> `1002`).
 *   **Data Synchronization**: The generated Employee Code is permanently stamped onto the `OnboardingRequest` record and synchronized with the newly minted `UserProfile`.
 *   **Rich Notification**: Sends an HTML-formatted email containing full hardware/software inventory, reporting structure, and the auto-generated credentials.
