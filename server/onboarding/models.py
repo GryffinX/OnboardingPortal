@@ -11,17 +11,28 @@ def validate_generic_text(value):
         raise ValidationError("Value cannot start or end with a space.")
     if "  " in value:
         raise ValidationError("Value cannot contain double spaces.")
-    if re.search(r"[%:;\"'<>(){}[\]|\\~`^!*+?]", value):
-        raise ValidationError("Value contains restricted special characters.")
+    if not re.match(r"^[a-zA-Z0-9 .-]+$", value):
+        raise ValidationError("Value can only contain letters, numbers, spaces, dots, and hyphens.")
+    if len(value) < 2:
+        raise ValidationError("Value must be at least 2 characters long.")
 
 def validate_comment_text(value):
     if not value: return
-    validate_generic_text(value)
+    if value.startswith(" ") or value.endswith(" "):
+        raise ValidationError("Comment cannot start or end with a space.")
+    if "  " in value:
+        raise ValidationError("Comment cannot contain double spaces.")
+    if not re.match(r"^[a-zA-Z0-9 .,!?-]+$", value):
+        raise ValidationError("Comment can only contain letters, numbers, and basic punctuation (.,!?-).")
     if len(value) < 10 or len(value) > 500:
         raise ValidationError("Comment/Reason must be between 10 and 500 characters.")
 
 def validate_employee_name(value):
-    validate_generic_text(value)
+    if not value: return
+    if value.startswith(" ") or value.endswith(" "):
+        raise ValidationError("Name cannot start or end with a space.")
+    if "  " in value:
+        raise ValidationError("Name cannot contain double spaces.")
     if not re.match(r"^[a-zA-Z ]+$", value):
         raise ValidationError("Name can only contain letters and spaces.")
     if len(value) < 3 or len(value) > 50:
@@ -34,6 +45,19 @@ def validate_phone_number(value):
         raise ValidationError("Phone number must contain only digits.")
     if len(value) != 10:
         raise ValidationError("Phone number must be exactly 10 digits.")
+
+def validate_employee_code(value):
+    if not value: return
+    if not value.isdigit():
+        raise ValidationError("Employee Code must contain only digits.")
+    if len(value) != 4:
+        raise ValidationError("Employee Code must be exactly 4 digits.")
+
+def validate_asset_code(value):
+    if not value: return
+    validate_generic_text(value)
+    if len(value) < 5 or len(value) > 20:
+        raise ValidationError("Asset Code must be between 5 and 20 characters.")
 
 class PasswordResetOTP(models.Model):
     email = models.EmailField(db_index=True)
@@ -104,6 +128,30 @@ class SoftwareCatalogItem(models.Model):
     def __str__(self):
         return f"{self.name} ({self.category})"
 
+class AssetInventory(models.Model):
+    asset_code = models.CharField(max_length=100, validators=[validate_generic_text])
+    laptop_model = models.CharField(max_length=100, validators=[validate_generic_text])
+    laptop_processor = models.CharField(max_length=100, validators=[validate_generic_text])
+    laptop_ram = models.CharField(max_length=50, validators=[validate_generic_text])
+    laptop_storage = models.CharField(max_length=50, validators=[validate_generic_text])
+    laptop_gpu = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
+    is_assigned = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        verbose_name_plural = "Asset Inventory"
+        ordering = ["asset_code"]
+
+    def clean(self):
+        validate_generic_text(self.asset_code)
+        validate_generic_text(self.laptop_model)
+        validate_generic_text(self.laptop_processor)
+        validate_generic_text(self.laptop_ram)
+        validate_generic_text(self.laptop_storage)
+        if self.laptop_gpu: validate_generic_text(self.laptop_gpu)
+
+    def __str__(self):
+        return f"{self.asset_code} - {self.laptop_model}"
+
 class OnboardingRequest(models.Model):
     request_code = models.CharField(max_length=20, unique=True)
     employee_name = models.CharField(max_length=50, validators=[validate_employee_name])
@@ -121,8 +169,8 @@ class OnboardingRequest(models.Model):
     pre_installed_software = models.TextField(blank=True)
     employee_installed_software = models.TextField(blank=True)
     manager_software = models.TextField(blank=True)
-    asset_code = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
-    employee_code = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
+    asset_code = models.CharField(max_length=100, blank=True, validators=[validate_asset_code])
+    employee_code = models.CharField(max_length=50, blank=True, validators=[validate_employee_code])
     hod_comment = models.TextField(blank=True, validators=[validate_comment_text])
     stop_reason = models.TextField(blank=True, validators=[validate_comment_text])
     
@@ -137,6 +185,7 @@ class OnboardingRequest(models.Model):
     date_of_joining = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
     
     # Infrastructure Workflow
+    infra_admin = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="managed_infra_tasks")
     infra_admin_comment = models.TextField(blank=True, validators=[validate_comment_text])
     infra_executive = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_infra_tasks")
     
@@ -145,6 +194,8 @@ class OnboardingRequest(models.Model):
     laptop_ram = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
     laptop_storage = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
     laptop_processor = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
+    laptop_gpu = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
+    laptop_acknowledged = models.BooleanField(default=False)
 
     def clean(self):
         validate_employee_name(self.employee_name)
@@ -153,7 +204,8 @@ class OnboardingRequest(models.Model):
         validate_generic_text(self.department)
         validate_generic_text(self.line_manager)
         validate_generic_text(self.hod)
-        if self.asset_code: validate_generic_text(self.asset_code)
+        if self.asset_code: validate_asset_code(self.asset_code)
+        if self.employee_code: validate_employee_code(self.employee_code)
         if self.hod_comment: validate_comment_text(self.hod_comment)
         if self.infra_admin_comment: validate_comment_text(self.infra_admin_comment)
         if self.stop_reason: validate_comment_text(self.stop_reason)
@@ -163,6 +215,7 @@ class OnboardingRequest(models.Model):
         if self.laptop_ram: validate_generic_text(self.laptop_ram)
         if self.laptop_storage: validate_generic_text(self.laptop_storage)
         if self.laptop_processor: validate_generic_text(self.laptop_processor)
+        if self.laptop_gpu: validate_generic_text(self.laptop_gpu)
 
     def save(self, *args, **kwargs):
         self.full_clean()

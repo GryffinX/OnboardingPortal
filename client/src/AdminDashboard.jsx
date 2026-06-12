@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import "./App.css"; 
 import { api } from "./services/api";
-import { validateName, validateEmail, validateGenericInput } from "./utils";
+import { 
+  validateName, 
+  validateEmail, 
+  validateGenericInput,
+  cleanNameInput,
+  cleanNumericInput,
+  cleanTextInput
+} from "./utils";
 
 function normalizeRole(role) {
   if (typeof role !== "string") {
@@ -43,6 +50,49 @@ const AdminDashboard = ({
   const [newSoftwareCategory, setNewSoftwareCategory] = useState("preinstalled");
   const [isBulkUpdating, setIsLoading] = useState(false);
 
+  const [assets, setAssets] = useState([]);
+  const [newAsset, setNewAsset] = useState({ assetCode: '', laptopModel: '', laptopProcessor: '', laptopRam: '', laptopStorage: '', laptopGpu: '' });
+  const [editingAsset, setEditingAsset] = useState(null);
+
+  const fetchAssets = async () => {
+    const { ok, data } = await api.getAssets();
+    if (ok) setAssets(data.assets || []);
+  };
+
+  const handleAddAsset = async (e) => {
+    e.preventDefault();
+    const { ok, data } = await api.createAsset(newAsset);
+    if (ok) {
+      onShowNotice("success", "Asset Added", "Hardware inventory updated.");
+      setNewAsset({ assetCode: '', laptopModel: '', laptopProcessor: '', laptopRam: '', laptopStorage: '', laptopGpu: '' });
+      fetchAssets();
+    } else {
+      onShowNotice("error", "Error", data.message);
+    }
+  };
+
+  const handleEditAssetSubmit = async (e) => {
+    e.preventDefault();
+    const { ok, data } = await api.updateAsset(editingAsset);
+    if (ok) {
+      onShowNotice("success", "Asset Updated", "Inventory record modified.");
+      setShowModal(null);
+      fetchAssets();
+    } else {
+      onShowNotice("error", "Error", data.message);
+    }
+  };
+
+  const onDeleteAsset = async (id) => {
+    const { ok, data } = await api.deleteAsset(id);
+    if (ok) {
+      onShowNotice("success", "Asset Deleted", "Removed from inventory.");
+      fetchAssets();
+    } else {
+      onShowNotice("error", "Error", data.message);
+    }
+  };
+
   const roles = ["All Roles", "Admin", "Manager", "HOD", "Infrastructure Admin", "Infrastructure Executive", "Employee"];
 
   const fetchDepts = async () => {
@@ -76,6 +126,7 @@ const AdminDashboard = ({
     const initDashboard = async () => {
       await fetchDepts();
       await fetchWorkflow();
+      await fetchAssets();
     };
     initDashboard();
   }, [apiBaseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -257,25 +308,46 @@ const AdminDashboard = ({
           {filteredUsers.length === 0 ? (
             <div className="request-empty">No users found matching your filters.</div>
           ) : (
-            filteredUsers.map((user, index) => (
-              <div key={index} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 0.8fr 1fr 0.6fr 1fr" }}>
-                <div><strong>{user.name}</strong><div style={{ fontSize: '0.75rem', color: '#64748b' }}>Code: {user.employeeCode || "N/A"} | {user.phoneNumber || "No phone"}</div></div>
-                <span style={{ fontSize: "0.9rem", color: "#475569" }}>{user.email}</span>
-                <span className={`status-pill status-pill-${normalizeRole(user.role).toLowerCase()}`}>{normalizeRole(user.role)}</span>
-                <span style={{ fontSize: "0.9rem", textAlign: "center" }}>{user.department || "N/A"}</span>
-                <span className={`status-pill status-pill-${user.isActive ? 'approved' : 'stopped'}`}>{user.isActive ? 'Active' : 'Inactive'}</span>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button type="button" className="ghost-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1 }} onClick={() => { setEditingUser({...user, originalEmail: user.email, password: ""}); setShowModal('edit'); }}>Edit</button>
-                  <button type="button" className="warning-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }} onClick={() => onShowConfirm({
-                    title: "Delete User",
-                    message: `Are you sure you want to permanently delete user "${user.name}"?`,
-                    confirmLabel: "Delete User",
-                    tone: "danger",
-                    onConfirm: () => onDeleteUser(user.email)
-                  })}>Delete</button>
+            filteredUsers.map((user, index) => {
+              const roleName = normalizeRole(user.role);
+              const roleAbbr = {
+                "Admin": "AD",
+                "Manager": "MN",
+                "HOD": "HD",
+                "Infrastructure Admin": "IA",
+                "Infrastructure Executive": "IE",
+                "Employee": "EM",
+                "HR": "HR"
+              }[roleName] || "??";
+
+              return (
+                <div key={index} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 0.8fr 1fr 0.6fr 1fr" }}>
+                  <div><strong>{user.name}</strong><div style={{ fontSize: '0.75rem', color: '#64748b' }}>Code: {user.employeeCode || "N/A"} | {user.phoneNumber || "No phone"}</div></div>
+                  <span style={{ fontSize: "0.9rem", color: "#475569" }}>{user.email}</span>
+                  <div>
+                    <span 
+                      className={`status-pill status-pill-${roleName.toLowerCase().replace(/\s+/g, '-')}`}
+                      title={roleName}
+                      style={{ minWidth: '32px' }}
+                    >
+                      {roleAbbr}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: "0.9rem", textAlign: "center" }}>{user.department || "N/A"}</span>
+                  <span className={`status-pill status-pill-${user.isActive ? 'approved' : 'stopped'}`}>{user.isActive ? 'Active' : 'Inactive'}</span>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button type="button" className="ghost-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1 }} onClick={() => { setEditingUser({...user, originalEmail: user.email, password: ""}); setShowModal('edit'); }}>Edit</button>
+                    <button type="button" className="warning-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }} onClick={() => onShowConfirm({
+                      title: "Delete User",
+                      message: `Are you sure you want to permanently delete user "${user.name}"?`,
+                      confirmLabel: "Delete User",
+                      tone: "danger",
+                      onConfirm: () => onDeleteUser(user.email)
+                    })}>Delete</button>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
           </div>
         </div>
@@ -321,7 +393,14 @@ const AdminDashboard = ({
               const { ok } = await api.createSoftwareItem(newSoftwareName.trim(), newSoftwareCategory);
               if (ok) { setNewSoftwareName(''); fetchWorkflow(); onShowNotice("success", "Software Added", "Catalog updated."); }
             }} style={{ display: 'flex', gap: 12 }}>
-              <input value={newSoftwareName} onChange={(e) => setNewSoftwareName(e.target.value)} placeholder="Software name" className="dashboard-search" style={{ flex: 2 }} />
+              <input 
+                value={newSoftwareName} 
+                onChange={(e) => setNewSoftwareName(cleanTextInput(e.target.value, 100))} 
+                placeholder="Software name" 
+                className="dashboard-search" 
+                style={{ flex: 2 }}
+                maxLength={100}
+              />
               <select value={newSoftwareCategory} onChange={(e) => setNewSoftwareCategory(e.target.value)} className="dashboard-search" style={{ flex: 1 }}>
                 <option value="preinstalled">Company Provided</option>
                 <option value="employee">Employee Installed</option>
@@ -353,12 +432,72 @@ const AdminDashboard = ({
           <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
             <h4 style={{ margin: '0 0 12px 0' }}>Add Department</h4>
             <form onSubmit={handleAddDept} style={{ display: 'flex', gap: 12 }}>
-              <input value={newDepartmentName} onChange={(e) => setNewDepartmentName(e.target.value)} placeholder="Dept Name" className="dashboard-search" style={{ flex: 1 }} />
+              <input 
+                value={newDepartmentName} 
+                onChange={(e) => setNewDepartmentName(cleanTextInput(e.target.value, 100))} 
+                placeholder="Dept Name" 
+                className="dashboard-search" 
+                style={{ flex: 1 }}
+                maxLength={100}
+              />
               <button type="submit" className="primary-button">Add</button>
             </form>
           </div>
         </section>
       </div>
+
+      <section className="dashboard-panel" style={{ marginTop: 20 }}>
+        <div className="dashboard-head">
+          <div>
+            <h2>Hardware Asset Inventory</h2>
+            <p>Manage laptop assets and specifications for Infrastructure assignment</p>
+          </div>
+          <button className="primary-button" onClick={() => setShowModal('add-asset')}>Add New Asset</button>
+        </div>
+        <div className="request-table">
+          <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.5fr 1fr 0.6fr 0.6fr 1fr 0.6fr 1fr" }}>
+            <span>Asset Code</span>
+            <span>Laptop Model</span>
+            <span>Processor</span>
+            <span>RAM</span>
+            <span>Storage</span>
+            <span>GPU</span>
+            <span>Status</span>
+            <span>Actions</span>
+          </div>
+          <div className="request-rows">
+            {assets.length === 0 ? (
+              <div className="request-empty">Inventory is empty. Add assets to enable Infrastructure assignment.</div>
+            ) : (
+              assets.map((asset) => (
+                <div key={asset.id} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 1fr 0.6fr 0.6fr 1fr 0.6fr 1fr" }}>
+                  <strong>{asset.assetCode}</strong>
+                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopModel}</span>
+                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopProcessor}</span>
+                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopRam}</span>
+                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopStorage}</span>
+                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopGpu || "N/A"}</span>
+                  <span className={`status-pill status-pill-${asset.isAssigned ? 'approved' : 'pending'}`}>
+                    {asset.isAssigned ? 'Assigned' : 'Available'}
+                  </span>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button type="button" className="ghost-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1 }} onClick={() => { setEditingAsset({...asset}); setShowModal('edit-asset'); }}>Edit</button>
+                    {!asset.isAssigned && (
+                      <button type="button" className="warning-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }} onClick={() => onShowConfirm({
+                        title: "Delete Asset",
+                        message: `Permanently remove asset "${asset.assetCode}" from inventory?`,
+                        confirmLabel: "Delete Asset",
+                        tone: "danger",
+                        onConfirm: () => onDeleteAsset(asset.id)
+                      })}>Delete</button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
 
       {showModal === 'add' && (
         <div className="modal-backdrop">
@@ -366,10 +505,10 @@ const AdminDashboard = ({
             <div className="modal-topbar"><div><h3>Add New User</h3><p>Assign a role and grant access</p></div><button className="ghost-button" onClick={() => setShowModal(null)}>✕</button></div>
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleAddSubmit} style={{ display: "grid", gap: "16px" }}>
-                <div className="form-group"><label>Full Name</label><input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value.replace(/[^a-zA-Z ]/g, "").slice(0, 50) })} className="dashboard-search" maxLength={50} /></div>
-                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: e.target.value.slice(0, 50) })} className="dashboard-search" placeholder="e.g. 1001" maxLength={50} /></div>
+                <div className="form-group"><label>Full Name</label><input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: cleanNameInput(e.target.value, 50) })} className="dashboard-search" maxLength={50} /></div>
+                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: cleanNumericInput(e.target.value, 4) })} className="dashboard-search" placeholder="e.g. 1001" maxLength={4} /></div>
                 <div className="form-group"><label>Email Address</label><input type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100) })} className="dashboard-search" maxLength={100} /></div>
-                <div className="form-group"><label>Phone Number</label><input type="text" required value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value.replace(/\D/g, "").slice(0, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
+                <div className="form-group"><label>Phone Number</label><input type="text" required value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: cleanNumericInput(e.target.value, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
                 <div className="form-group">
                   <label>Role</label>
                   <select 
@@ -399,7 +538,7 @@ const AdminDashboard = ({
                     )}
                   </select>
                 </div>
-                <div className="form-group"><label>Initial Password</label><input type="password" required value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="dashboard-search" placeholder="••••••••" /></div>
+                <div className="form-group"><label>Initial Password</label><input type="password" required value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value.slice(0, 50) })} className="dashboard-search" placeholder="••••••••" maxLength={50} /></div>
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>Create User</button>
               </form>
             </div>
@@ -413,10 +552,10 @@ const AdminDashboard = ({
             <div className="modal-topbar"><div><h3>Edit User</h3><p>Update user details or role</p></div><button className="ghost-button" onClick={() => setShowModal(null)}>✕</button></div>
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleEditUserSubmit} style={{ display: "grid", gap: "16px" }}>
-                <div className="form-group"><label>Full Name</label><input type="text" required value={editingUser.name} onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value.replace(/[^a-zA-Z ]/g, "").slice(0, 50) })} className="dashboard-search" maxLength={50} /></div>
-                <div className="form-group"><label>Employee Code</label><input type="text" required value={editingUser.employeeCode} onChange={(e) => setEditingUser({ ...editingUser, employeeCode: e.target.value.slice(0, 50) })} className="dashboard-search" maxLength={50} /></div>
+                <div className="form-group"><label>Full Name</label><input type="text" required value={editingUser.name} onChange={(e) => setEditingUser({ ...editingUser, name: cleanNameInput(e.target.value, 50) })} className="dashboard-search" maxLength={50} /></div>
+                <div className="form-group"><label>Employee Code</label><input type="text" required value={editingUser.employeeCode} onChange={(e) => setEditingUser({ ...editingUser, employeeCode: cleanNumericInput(e.target.value, 4) })} className="dashboard-search" maxLength={4} /></div>
                 <div className="form-group"><label>Email Address</label><input type="email" required value={editingUser.email} onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100) })} className="dashboard-search" maxLength={100} /></div>
-                <div className="form-group"><label>Phone Number</label><input type="text" required value={editingUser.phoneNumber} onChange={(e) => setEditingUser({ ...editingUser, phoneNumber: e.target.value.replace(/\D/g, "").slice(0, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
+                <div className="form-group"><label>Phone Number</label><input type="text" required value={editingUser.phoneNumber} onChange={(e) => setEditingUser({ ...editingUser, phoneNumber: cleanNumericInput(e.target.value, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
                 <div className="form-group">
                   <label>Role</label>
                   <select 
@@ -452,7 +591,7 @@ const AdminDashboard = ({
                   </select>
                 </div>
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><label style={{ margin: 0 }}>Active Account</label><input type="checkbox" checked={editingUser.isActive} onChange={(e) => setEditingUser({ ...editingUser, isActive: e.target.checked })} /></div>
-                <div className="form-group"><label>Change Password (Optional)</label><input type="password" value={editingUser.password} onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })} className="dashboard-search" placeholder="Leave blank to keep current" /></div>
+                <div className="form-group"><label>Change Password (Optional)</label><input type="password" value={editingUser.password} onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value.slice(0, 50) })} className="dashboard-search" placeholder="Leave blank to keep current" maxLength={50} /></div>
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>Save Changes</button>
               </form>
             </div>
@@ -466,7 +605,7 @@ const AdminDashboard = ({
             <div className="modal-topbar"><div><h3>Edit Software</h3><p>Update item name or category</p></div><button className="ghost-button" onClick={() => setShowModal(null)}>✕</button></div>
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleEditSoftwareSubmit} style={{ display: "grid", gap: "16px" }}>
-                <div className="form-group"><label>Software Name</label><input type="text" required value={editingSoftware.newName} onChange={(e) => setEditingSoftware({ ...editingSoftware, newName: e.target.value })} className="dashboard-search" /></div>
+                <div className="form-group"><label>Software Name</label><input type="text" required value={editingSoftware.newName} onChange={(e) => setEditingSoftware({ ...editingSoftware, newName: cleanTextInput(e.target.value, 150) })} className="dashboard-search" maxLength={150} /></div>
                 <div className="form-group"><label>Category</label><select value={editingSoftware.newCategory} onChange={(e) => setEditingSoftware({ ...editingSoftware, newCategory: e.target.value })} className="dashboard-search"><option value="preinstalled">Company Provided</option><option value="employee">Employee Installed</option></select></div>
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>Update Item</button>
               </form>
@@ -481,8 +620,119 @@ const AdminDashboard = ({
             <div className="modal-topbar"><div><h3>Edit Department</h3><p>Update organization unit name</p></div><button className="ghost-button" onClick={() => setShowModal(null)}>✕</button></div>
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleEditDeptSubmit} style={{ display: "grid", gap: "16px" }}>
-                <div className="form-group"><label>Department Name</label><input type="text" required value={editingDept.newName} onChange={(e) => setEditingDept({ ...editingDept, newName: e.target.value })} className="dashboard-search" /></div>
+                <div className="form-group"><label>Department Name</label><input type="text" required value={editingDept.newName} onChange={(e) => setEditingDept({ ...editingDept, newName: cleanTextInput(e.target.value, 100) })} className="dashboard-search" maxLength={100} /></div>
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>Update Department</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(showModal === 'add-asset' || showModal === 'edit-asset') && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ width: "450px" }}>
+            <div className="modal-topbar">
+              <div>
+                <h3>{showModal === 'add-asset' ? "Add Hardware Asset" : "Edit Asset Details"}</h3>
+                <p>Define laptop specifications for assignment</p>
+              </div>
+              <button className="ghost-button" onClick={() => setShowModal(null)}>✕</button>
+            </div>
+            <div style={{ padding: "24px" }}>
+              <form onSubmit={showModal === 'add-asset' ? handleAddAsset : handleEditAssetSubmit} style={{ display: "grid", gap: "16px" }}>
+                <div className="form-group">
+                  <label>Asset Code (Unique)</label>
+                  <input 
+                    type="text" required 
+                    value={showModal === 'add-asset' ? newAsset.assetCode : editingAsset.assetCode} 
+                    onChange={(e) => {
+                      const val = cleanTextInput(e.target.value, 20);
+                      if(showModal === 'add-asset') setNewAsset({...newAsset, assetCode: val});
+                      else setEditingAsset({...editingAsset, assetCode: val});
+                    }} 
+                    className="dashboard-search" placeholder="e.g. SEC-LP-101" maxLength={20} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Laptop Model</label>
+                  <input 
+                    type="text" required 
+                    value={showModal === 'add-asset' ? newAsset.laptopModel : editingAsset.laptopModel} 
+                    onChange={(e) => {
+                      const val = cleanTextInput(e.target.value, 100);
+                      if(showModal === 'add-asset') setNewAsset({...newAsset, laptopModel: val});
+                      else setEditingAsset({...editingAsset, laptopModel: val});
+                    }} 
+                    className="dashboard-search" placeholder="e.g. ThinkPad T14 Gen 4" maxLength={100} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Processor</label>
+                  <input 
+                    type="text" required 
+                    value={showModal === 'add-asset' ? newAsset.laptopProcessor : editingAsset.laptopProcessor} 
+                    onChange={(e) => {
+                      const val = cleanTextInput(e.target.value, 100);
+                      if(showModal === 'add-asset') setNewAsset({...newAsset, laptopProcessor: val});
+                      else setEditingAsset({...editingAsset, laptopProcessor: val});
+                    }} 
+                    className="dashboard-search" placeholder="e.g. Intel i7-1365U" maxLength={100} 
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label>RAM</label>
+                    <input 
+                      type="text" required 
+                      value={showModal === 'add-asset' ? newAsset.laptopRam : editingAsset.laptopRam} 
+                      onChange={(e) => {
+                        const val = cleanTextInput(e.target.value, 20);
+                        if(showModal === 'add-asset') setNewAsset({...newAsset, laptopRam: val});
+                        else setEditingAsset({...editingAsset, laptopRam: val});
+                      }} 
+                      className="dashboard-search" placeholder="16GB" maxLength={20} 
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Storage</label>
+                    <input 
+                      type="text" required 
+                      value={showModal === 'add-asset' ? newAsset.laptopStorage : editingAsset.laptopStorage} 
+                      onChange={(e) => {
+                        const val = cleanTextInput(e.target.value, 20);
+                        if(showModal === 'add-asset') setNewAsset({...newAsset, laptopStorage: val});
+                        else setEditingAsset({...editingAsset, laptopStorage: val});
+                      }} 
+                      className="dashboard-search" placeholder="512GB SSD" maxLength={20} 
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>GPU (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={showModal === 'add-asset' ? newAsset.laptopGpu : editingAsset.laptopGpu} 
+                    onChange={(e) => {
+                      const val = cleanTextInput(e.target.value, 100);
+                      if(showModal === 'add-asset') setNewAsset({...newAsset, laptopGpu: val});
+                      else setEditingAsset({...editingAsset, laptopGpu: val});
+                    }} 
+                    className="dashboard-search" placeholder="e.g. NVIDIA RTX 4050" maxLength={100} 
+                  />
+                </div>
+                {showModal === 'edit-asset' && (
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input 
+                      type="checkbox" 
+                      checked={editingAsset.isAssigned} 
+                      onChange={(e) => setEditingAsset({...editingAsset, isAssigned: e.target.checked})} 
+                    />
+                    <label style={{ margin: 0 }}>Currently Assigned to Employee</label>
+                  </div>
+                )}
+                <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>
+                  {showModal === 'add-asset' ? "Add to Inventory" : "Save Changes"}
+                </button>
               </form>
             </div>
           </div>

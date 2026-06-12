@@ -71,9 +71,9 @@ def create_software_item(request):
 
         return JsonResponse({"ok": True, "item": {"name": item.name, "category": item.category}}, status=201)
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": "Unable to create software item", "error": str(exc)}, status=500)
+        return JsonResponse({"message": "Unable to create software item", "error": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -95,7 +95,7 @@ def delete_software_item(request):
         item.delete()
         return JsonResponse({"ok": True, "message": "Software item deleted successfully."})
     except Exception as exc:
-        return JsonResponse({"message": "Unable to delete software item", "error": str(exc)}, status=500)
+        return JsonResponse({"message": "Unable to delete software item", "error": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -130,9 +130,9 @@ def update_software_item(request):
 
         return JsonResponse({"ok": True, "message": "Software item updated successfully."})
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": "Unable to update software item", "error": str(exc)}, status=500)
+        return JsonResponse({"message": "Unable to update software item", "error": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -164,9 +164,9 @@ def update_department(request):
 
         return JsonResponse({"ok": True, "message": "Department updated successfully."})
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": "Unable to update department", "error": str(exc)}, status=500)
+        return JsonResponse({"message": "Unable to update department", "error": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -187,4 +187,4 @@ def delete_department(request):
         item.delete()
         return JsonResponse({"ok": True, "message": "Department deleted successfully."})
     except Exception as exc:
-        return JsonResponse({"message": "Unable to delete department", "error": str(exc)}, status=500)
+        return JsonResponse({"message": "Unable to delete department", "error": "An internal server error occurred."}, status=500)

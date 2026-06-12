@@ -8,7 +8,15 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.models import User
 from ..models import UserProfile, Department, OnboardingRequest
-from .utils import validate_payload, build_message, validate_user_payload, validate_generic_input, parse_software_list, dump_software_list
+from .utils import (
+    validate_payload, 
+    build_message, 
+    validate_user_payload, 
+    validate_generic_input, 
+    parse_software_list, 
+    dump_software_list,
+    send_workflow_notification
+)
 from django.core.exceptions import ValidationError
 
 
@@ -17,8 +25,9 @@ from django.db import transaction
 def _get_employee_code_by_name(name):
     if not name: return ""
     from django.contrib.auth.models import User
+    from django.db.models import Q
     from ..models import UserProfile
-    user = User.objects.filter(models.Q(first_name__icontains=name) | models.Q(last_name__icontains=name)).first()
+    user = User.objects.filter(Q(first_name__icontains=name) | Q(last_name__icontains=name)).first()
     if user:
         try:
             return user.profile.employee_code or ""
@@ -34,9 +43,9 @@ def onboarding_requests_view(request):
         requests = OnboardingRequest.objects.all().order_by("-id")
         request_list = []
         for req in requests:
-            # Try to find the user by personal email to get their code
+            # Try to find the user by personal or official email to get their code
             subject_code = ""
-            user_obj = User.objects.filter(email=req.personal_email).first()
+            user_obj = User.objects.filter(models.Q(email=req.personal_email) | models.Q(email=req.official_email)).first()
             if user_obj:
                 try:
                     subject_code = user_obj.profile.employee_code or ""
@@ -71,6 +80,7 @@ def onboarding_requests_view(request):
                 "revisionCount": req.revision_count,
                 "managerApprovedAt": req.manager_approved_at,
                 "hodApprovedAt": req.hod_approved_at,
+                "dateOfJoining": req.date_of_joining,
             })
         return JsonResponse({"requests": request_list})
 
@@ -131,6 +141,10 @@ def onboarding_requests_view(request):
             if "revisionCount" in payload: req.revision_count = payload["revisionCount"]
             if "managerApprovedAt" in payload: req.manager_approved_at = payload["managerApprovedAt"]
             if "hodApprovedAt" in payload: req.hod_approved_at = payload["hodApprovedAt"]
+            if "dateOfJoining" in payload:
+                err = validate_generic_input(payload["dateOfJoining"], "Date of Joining")
+                if err: return JsonResponse({"message": err}, status=400)
+                req.date_of_joining = (payload["dateOfJoining"] or "").strip()
             
             req.save()
             return JsonResponse({"message": "Request updated successfully."})
@@ -211,7 +225,7 @@ def onboarding_email(request):
             
             message, official_email = build_message(payload)
             
-            OnboardingRequest.objects.create(
+            new_req = OnboardingRequest.objects.create(
                 request_code=req_code,
                 employee_name=payload["name"],
                 employee_phone_number=payload["employeePhoneNumber"],
@@ -225,10 +239,10 @@ def onboarding_email(request):
             
             # Send email only after DB create is successful in the atomic block
             try:
-                message.send(fail_silently=False)
+                send_workflow_notification(new_req, "manager_review")
             except Exception as mail_exc:
                 # If mail fails, we raise an exception to trigger the transaction rollback
-                raise Exception(f"Failed to send email: {mail_exc}")
+                raise Exception(f"Failed to send manager notification: {mail_exc}")
 
     except Exception as exc:
         error_message = "Unable to complete request right now."
@@ -269,6 +283,14 @@ def finalize_onboarding(request):
     except json.JSONDecodeError:
         return JsonResponse({"message": "Invalid JSON payload."}, status=400)
 
+    request_code = payload.get("requestCode")
+    
+    # If this is a finalization from a request, we can pull the phone number from the request
+    if request_code and not payload.get("phoneNumber"):
+        onb_req = OnboardingRequest.objects.filter(request_code=request_code).first()
+        if onb_req:
+            payload["phoneNumber"] = onb_req.employee_phone_number
+
     errors = validate_user_payload(payload)
     if errors:
         return JsonResponse({"message": "Validation failed.", "errors": errors}, status=400)
@@ -276,7 +298,6 @@ def finalize_onboarding(request):
     name = payload.get("name").strip()
     email = payload.get("email").strip()
     department_name = (payload.get("department") or "").strip()
-    request_code = payload.get("requestCode")
 
     try:
         with transaction.atomic():
@@ -284,13 +305,11 @@ def finalize_onboarding(request):
             user = User.objects.filter(email=email).first() or User.objects.filter(username=email).first()
             
             # Get Onboarding Request Details
-            onb_req = None
-            if request_code:
-                onb_req = OnboardingRequest.objects.filter(request_code=request_code).first()
+            onb_req = OnboardingRequest.objects.filter(request_code=request_code).first() if request_code else None
 
             # Uniqueness checks for final account creation
             if not user:
-                phone = (onb_req.employee_phone_number if onb_req else "").strip()
+                phone = (payload.get("phoneNumber") or (onb_req.employee_phone_number if onb_req else "")).strip()
                 if phone and UserProfile.objects.filter(phone_number=phone).exists():
                     return JsonResponse({"message": "The mobile number from this request is already assigned to another registered user."}, status=400)
 
@@ -370,7 +389,7 @@ def finalize_onboarding(request):
                         subject=f"Welcome to the Team! Your Onboarding is Approved ({employee_code})",
                         body="\n".join(body_lines),
                         from_email=settings.EMAIL_HOST_USER,
-                        to=[email],
+                        to=[onb_req.personal_email],
                     )
                     message.send(fail_silently=False)
                 except Exception as mail_exc:
@@ -380,14 +399,15 @@ def finalize_onboarding(request):
             if onb_req:
                 onb_req.stage = "approved"
                 onb_req.stop_reason = ""
+                onb_req.official_email = email
                 if employee_code:
                     onb_req.employee_code = employee_code
                 onb_req.save()
 
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": f"Error finalising onboarding: {str(exc)}"}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
     return JsonResponse({
         "message": "User account is active.",

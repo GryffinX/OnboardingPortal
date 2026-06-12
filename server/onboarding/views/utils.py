@@ -64,6 +64,7 @@ def validate_generic_input(value, field_name):
     if "  " in value: return f"{field_name} cannot contain double spaces."
     if re.search(r"[%:;\"'<>(){}[\]|\\~`^!*+?]", value):
         return f"{field_name} contains restricted special characters."
+    if len(value) < 2: return f"{field_name} must be at least 2 characters long."
     return None
 
 def sanitize_for_email(value):
@@ -114,6 +115,12 @@ def validate_payload(payload):
 
     return errors
 
+def validate_employee_code(code):
+    if not code: return "Employee code is required."
+    if not code.isdigit(): return "Employee code must contain only digits."
+    if len(code) != 4: return "Employee code must be exactly 4 digits."
+    return None
+
 def validate_user_payload(payload):
     errors = {}
     name = (payload.get("name") or "").strip()
@@ -132,7 +139,7 @@ def validate_user_payload(payload):
     if phone_err: errors["phoneNumber"] = phone_err
     
     if employee_code:
-        code_err = validate_generic_input(employee_code, "Employee Code")
+        code_err = validate_employee_code(employee_code)
         if code_err: errors["employeeCode"] = code_err
     
     if password and len(password) < 8:
@@ -140,6 +147,83 @@ def validate_user_payload(payload):
     
     return errors
 
+
+def get_user_email_by_name(name):
+    if not name: return None
+    from django.contrib.auth.models import User
+    from django.db.models import Q
+    user = User.objects.filter(Q(first_name__icontains=name) | Q(last_name__icontains=name)).first()
+    return user.email if user else None
+
+def get_emails_by_role(role_name, department_name=None):
+    from django.contrib.auth.models import User
+    from ..models import UserProfile
+    
+    query = UserProfile.objects.filter(role=role_name, user__is_active=True)
+    if department_name:
+        query = query.filter(department__name=department_name)
+    
+    return list(query.values_list('user__email', flat=True))
+
+def send_workflow_notification(request_record, next_stage):
+    """
+    Sends notification to the next person in the workflow chain.
+    """
+    recipients = []
+    subject = f"Action Required: Onboarding Request {request_record.request_code}"
+    
+    if next_stage == "manager_review":
+        email = get_user_email_by_name(request_record.line_manager)
+        if email: recipients.append(email)
+        role_label = "Line Manager"
+    elif next_stage == "hod_review":
+        email = get_user_email_by_name(request_record.hod)
+        if email: recipients.append(email)
+        role_label = "HOD"
+    elif next_stage == "infra_admin_review":
+        # Notify all Infrastructure Admins
+        recipients = get_emails_by_role("Infrastructure Admin", "Infrastructure")
+        role_label = "Infrastructure Admin"
+    elif next_stage == "infra_executive_review":
+        # Notify the specific assigned Executive
+        if request_record.infra_executive:
+            recipients.append(request_record.infra_executive.email)
+        role_label = "Infrastructure Executive"
+    else:
+        return # No notification for other stages here
+
+    if not recipients:
+        # Fallback to test recipient if no specific user found
+        recipients = [settings.TEST_RECIPIENT]
+
+    body = "\n".join([
+        f"Dear {role_label},",
+        "",
+        f"An onboarding request for {request_record.employee_name} is now pending at your stage: {next_stage.replace('_', ' ').title()}.",
+        "",
+        "--- REQUEST SUMMARY ---",
+        f"Request Code: {request_record.request_code}",
+        f"Employee Name: {request_record.employee_name}",
+        f"Department: {request_record.department}",
+        f"Line Manager: {request_record.line_manager}",
+        f"HOD: {request_record.hod}",
+        "",
+        "Please log in to the Onboarding Portal to review and take action.",
+        "",
+        "Regards,",
+        "Onboarding Workflow System"
+    ])
+
+    try:
+        message = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=settings.EMAIL_HOST_USER,
+            to=recipients,
+        )
+        message.send(fail_silently=False)
+    except Exception as e:
+        print(f"Workflow mail failed: {e}")
 
 def build_message(payload):
     official_email = f"{payload['officialEmailUser'].strip()}{settings.OFFICIAL_DOMAIN}"

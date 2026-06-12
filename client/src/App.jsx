@@ -22,6 +22,8 @@ import {
   validateName,
   validateEmail,
   validateEmployeePhoneNumber,
+  cleanNameInput,
+  cleanNumericInput,
 } from "./utils";
 import { api } from "./services/api";
 
@@ -58,7 +60,7 @@ function setRoutePage(page) {
 }
 
 function isWorkflowDashboardPage(page) {
-  return [pages.admin, pages.manager, pages.hod, pages.hr, pages.requests].includes(page);
+  return [pages.admin, pages.manager, pages.hod, pages.infraAdmin, pages.infraExecutive, pages.hr, pages.requests].includes(page);
 }
 
 function ConfirmationModal({ config, onCancel }) {
@@ -214,7 +216,7 @@ function ProfileDashboard({ user, request, onUpdateProfile, onShowNotice }) {
                 type="text" 
                 className="dashboard-search" 
                 value={otp} 
-                onChange={(e) => setOtp(e.target.value)} 
+                onChange={(e) => setOtp(cleanNumericInput(e.target.value, 6))} 
                 placeholder="000000"
                 maxLength={6}
                 required
@@ -230,21 +232,21 @@ function ProfileDashboard({ user, request, onUpdateProfile, onShowNotice }) {
           <form onSubmit={handleRequestOtp} style={{ maxWidth: 500, marginTop: 24, display: 'grid', gap: 20 }}>
             <div className="form-group">
               <label>Full Name</label>
-              <input type="text" className="dashboard-search" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+              <input type="text" className="dashboard-search" value={formData.name} onChange={(e) => setFormData({...formData, name: cleanNameInput(e.target.value, 50)})} required maxLength={50} />
             </div>
             <div className="form-group">
               <label>Personal Email</label>
-              <input type="email" className="dashboard-search" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+              <input type="email" className="dashboard-search" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100)})} required maxLength={100} />
             </div>
             <div className="form-group">
               <label>Phone Number</label>
-              <input type="text" className="dashboard-search" value={formData.phoneNumber} onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})} placeholder="10-digit number" />
+              <input type="text" className="dashboard-search" value={formData.phoneNumber} onChange={(e) => setFormData({...formData, phoneNumber: cleanNumericInput(e.target.value, 10)})} placeholder="10-digit number" maxLength={10} />
             </div>
             <div style={{ padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
               <h4 style={{ margin: '0 0 12px 0' }}>Change Password</h4>
               <div style={{ display: 'grid', gap: 12 }}>
-                <input type="password" placeholder="New password (min 8 chars)" className="dashboard-search" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
-                <input type="password" placeholder="Confirm new password" className="dashboard-search" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} />
+                <input type="password" placeholder="New password (min 8 chars)" className="dashboard-search" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value.slice(0, 50)})} maxLength={50} />
+                <input type="password" placeholder="Confirm new password" className="dashboard-search" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value.slice(0, 50)})} maxLength={50} />
               </div>
             </div>
             <div className="detail-actions">
@@ -267,11 +269,11 @@ function ProfileDashboard({ user, request, onUpdateProfile, onShowNotice }) {
           <div className="detail-grid" style={{ marginTop: 24, marginBottom: 24 }}>
             <div>
               <span>Asset Code</span>
-              <strong>{request.assetCode || "Pending Assignment"}</strong>
+              <strong>{request.assetCode || "N/A"}</strong>
             </div>
             <div>
               <span>Official Email</span>
-              <strong>{request.officialEmail || "Pending Creation"}</strong>
+              <strong>{request.officialEmail || "N/A"}</strong>
             </div>
             {request.laptopModel && (
               <>
@@ -558,6 +560,7 @@ function App() {
       const { ok, data } = await api.saveRequest({ 
         id: editingHrRequestId, 
         stage: workflowStages.manager, 
+        officialEmail: `${formData.officialEmailUser}${workflowOptions.officialEmailDomain || ""}`,
         formData 
       });
       if (ok) {
@@ -587,13 +590,17 @@ function App() {
       ...overrides,
     };
 
-    if (role === pages.manager) {
+    if (role === pages.manager || role === pages.infraAdmin) {
       payload.managerSoftware = softwareList;
+    }
+
+    if (role === pages.infraAdmin && currentUser?.id) {
+      payload.infraAdminId = currentUser.id;
     }
 
     const { ok, data } = await api.saveRequest(payload);
     if (ok) {
-      showNotice("success", "Saved", "Software and asset details updated.");
+      showNotice("success", "Saved", "Details saved successfully.");
       await handleRefreshRequests();
     } else {
       showNotice("error", "Error", data.message || "Failed to save details.");
@@ -604,7 +611,8 @@ function App() {
     if (!currentUser) return [];
     const isHrDept = currentUser.department?.trim().toUpperCase() === "HR";
     const role = normalizeRole(currentUser.role);
-    if (isHrDept || role === "Admin" || role === "Infrastructure Admin") return requests;
+    if (isHrDept || role === "Admin") return requests;
+    if (role === "Infrastructure Admin") return requests.filter(r => r.stage === workflowStages.infraAdmin || r.stage === workflowStages.infraExecutive || r.stage === workflowStages.approved);
     if (role === "Manager") return requests.filter(r => r.formData.lineManager === currentUser.name);
     if (role === "HOD") return requests.filter(r => r.formData.hod === currentUser.name);
     if (role === "Infrastructure Executive") return requests.filter(r => r.infraExecutive?.id === currentUser.id);
@@ -628,6 +636,10 @@ function App() {
       filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hod);
     } else if (currentPage === pages.hr) {
       filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hr);
+    } else if (currentPage === pages.infraAdmin) {
+      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.infraAdmin);
+    } else if (currentPage === pages.infraExecutive) {
+      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.infraExecutive);
     } else if (currentPage === pages.requests || currentPage === pages.admin) {
       if (requestHistoryFilter === "wip") {
         filtered = userFilteredRequests.filter(r => [workflowStages.manager, workflowStages.hod, workflowStages.hr, workflowStages.infraAdmin, workflowStages.infraExecutive].includes(r.stage));
@@ -711,12 +723,22 @@ function App() {
                   />
                   <div ref={auditSectionRef} className="dashboard-layout" style={{ marginTop: 40 }}>
                     <RequestDetailPanel
+                      key={`${selectedRequest?.id}-${selectedRequest?.revisionCount}`}
                       request={selectedRequest}
                       role={pages.admin}
                       userDepartment={currentUser?.department}
                       allUsers={allUsers}
                       onShowNotice={showNotice}
                       onSaveSoftware={handleSaveSoftware}
+                      onAcknowledgeLaptop={async (id) => {
+                        const { ok, data } = await api.acknowledgeLaptop(id);
+                        if (ok) {
+                          showNotice("success", "Acknowledged", "You have successfully acknowledged the receipt of your laptop.");
+                          handleRefreshRequests();
+                        } else {
+                          showNotice("error", "Error", data.message || "Failed to acknowledge laptop receipt.");
+                        }
+                      }}
                       onDeleteRequest={(id) => {
                         setConfirmConfig({
                           title: "Delete Permanently?",
@@ -761,6 +783,7 @@ function App() {
               {isWorkflowDashboardPage(currentPage) && currentPage !== pages.admin && (
                 <div className="dashboard-layout">
                     <RequestDetailPanel 
+                      key={`${selectedRequest?.id}-${selectedRequest?.revisionCount}`}
                       request={selectedRequest} 
                       role={currentPage} 
                       userDepartment={currentUser?.department}
@@ -775,39 +798,53 @@ function App() {
                       onApprove={async (id) => {
                         if (currentPage === pages.manager) {
                           const { ok, data } = await api.saveRequest({ id, stage: workflowStages.hod });
-                          if (ok) { showNotice("success", "Approved", "Request forwarded to HOD."); handleRefreshRequests(); }
+                          if (ok) { showNotice("success", "Approved", "Request forwarded to HOD."); setSelectedRequestId(null); handleRefreshRequests(); }
                           else { showNotice("error", "Error", data.message || "Failed to approve request."); }
                         } else if (currentPage === pages.hod) {
                           const { ok, data } = await api.saveRequest({ id, stage: workflowStages.infraAdmin });
-                          if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Admin."); handleRefreshRequests(); }
+                          if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Admin."); setSelectedRequestId(null); handleRefreshRequests(); }
                           else { showNotice("error", "Error", data.message || "Failed to approve request."); }
                         } else if (currentPage === pages.infraAdmin) {
-                          const { ok, data } = await api.saveRequest({ id, stage: workflowStages.infraExecutive });
-                          if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Executive."); handleRefreshRequests(); }
+                          const { ok, data } = await api.saveRequest({ 
+                            id, 
+                            stage: workflowStages.infraExecutive,
+                            infraAdminId: currentUser?.id 
+                          });
+                          if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Executive."); setSelectedRequestId(null); handleRefreshRequests(); }
                           else { showNotice("error", "Error", data.message || "Failed to approve request."); }
                         } else if (currentPage === pages.infraExecutive) {
                           const requestToFinalize = requests.find(r => r.id === id);
                           if (!requestToFinalize) return;
-                          
-                          // We first save the request as approved
+
+                          const { requestCode, formData, officialEmail } = requestToFinalize;
+                          const { name, department } = formData;
+
+                          if (!officialEmail) {
+                            showNotice("error", "Validation Error", "Official email is missing. Please ensure the official email is set before final approval.");
+                            return;
+                          }
+
+                          // 1. Save stage as approved
                           const { ok: saveOk, data: saveData } = await api.saveRequest({ id, stage: workflowStages.approved });
                           if (!saveOk) {
                             showNotice("error", "Error", saveData.message || "Failed to save request stage.");
                             return;
                           }
 
-                          // Then we finalize it to create the user account
+                          // 2. Finalize and create user
                           const { ok, data } = await api.finalizeOnboarding({
-                            requestCode: requestToFinalize.requestCode,
-                            name: requestToFinalize.formData.name,
-                            email: requestToFinalize.formData.personalEmail,
-                            department: requestToFinalize.formData.department,
+                            requestCode: requestCode,
+                            name: name,
+                            email: officialEmail,
+                            department: department,
                           });
-                          
+
                           if (ok) { 
-                            showNotice("success", "Approved", "Request fully approved and user account created."); 
+                            const successMsg = `Onboarding finalized for ${name}. Employee Code: ${data.employeeCode || "assigned"}. A welcome email has been sent to ${officialEmail} with account credentials and hardware details.`;
+                            showNotice("success", "Onboarding Complete", successMsg); 
+                            setSelectedRequestId(null);
                             handleRefreshRequests(); 
-                            setAllUsers(await fetchUsersData()); // Refresh users list for admin
+                            setAllUsers(await fetchUsersData()); 
                           } else {
                             showNotice("error", "Error Finalizing", data.message || "Request approved but failed to create user account.");
                             handleRefreshRequests();
@@ -815,12 +852,14 @@ function App() {
                         }
                       }}
                       onSendToHr={async (id, actor, reason) => {
-                        const { ok } = await api.saveRequest({ id, stage: workflowStages.hr, reviewRequestedBy: actor, reviewReason: reason });
-                        if (ok) { showNotice("warning", "Sent to HR", "Request sent back for HR review."); handleRefreshRequests(); }
+                        const { ok, data } = await api.saveRequest({ id, stage: workflowStages.hr, reviewRequestedBy: actor, reviewReason: reason });
+                        if (ok) { showNotice("warning", "Sent to HR", "Request sent back for HR review."); setSelectedRequestId(null); handleRefreshRequests(); }
+                        else { showNotice("error", "Error", data?.message || "Failed to send to HR."); }
                       }}
                       onStopCase={async (id, reason) => {
-                        const { ok } = await api.saveRequest({ id, stage: workflowStages.stopped, stopReason: reason });
-                        if (ok) { showNotice("error", "Stopped", "Onboarding case has been stopped."); handleRefreshRequests(); }
+                        const { ok, data } = await api.saveRequest({ id, stage: workflowStages.stopped, stopReason: reason });
+                        if (ok) { showNotice("error", "Stopped", "Onboarding case has been stopped."); setSelectedRequestId(null); handleRefreshRequests(); }
+                        else { showNotice("error", "Error", data?.message || "Failed to stop case."); }
                       }}
                     />
                     <RequestTable 
@@ -856,7 +895,20 @@ function App() {
                     if (!currentUserRequest) return <div className="request-empty">No onboarding record found for your email.</div>;
                     return (
                       <div className="dashboard-layout">
-                        <RequestDetailPanel request={currentUserRequest} role={pages.status} onShowNotice={showNotice} />
+                        <RequestDetailPanel 
+                          request={currentUserRequest} 
+                          role={pages.status} 
+                          onShowNotice={showNotice} 
+                          onAcknowledgeLaptop={async (id) => {
+                            const { ok, data } = await api.acknowledgeLaptop(id);
+                            if (ok) {
+                              showNotice("success", "Acknowledged", "You have successfully acknowledged the receipt of your laptop.");
+                              handleRefreshRequests();
+                            } else {
+                              showNotice("error", "Error", data.message || "Failed to acknowledge laptop receipt.");
+                            }
+                          }}
+                        />
                       </div>
                     );
                   })()}

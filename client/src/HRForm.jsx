@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import "./HRForm.css";
-import { validateName, validateEmail, validateEmployeePhoneNumber, getInitialFormData } from "./utils";
+import { 
+  validateName, 
+  validateEmail, 
+  validateEmployeePhoneNumber, 
+  getInitialFormData,
+  cleanNameInput,
+  cleanNumericInput
+} from "./utils";
 
 const officialEmailUserRegex = /^[a-zA-Z0-9._]+$/;
 
@@ -93,18 +100,15 @@ export default function HRForm({
   function handleChange(event) {
     let { name, value } = event.target;
 
-    // Strict input masking
-    if (name === "employeePhoneNumber") {
-      value = value.replace(/\D/g, "").slice(0, 10);
-    }
-    if (name === "name") {
-      value = value.replace(/[^a-zA-Z ]/g, "").slice(0, 50);
-    }
-    if (name === "officialEmailUser") {
-      value = value.replace(/[^a-zA-Z0-9.-]/g, "").slice(0, 50);
-    }
-    if (name === "personalEmail") {
+    // Strict input masking using helpers
+    if (name === "name" || name === "lineManager" || name === "hod") {
+      value = cleanNameInput(value, 50);
+    } else if (name === "employeePhoneNumber") {
+      value = cleanNumericInput(value, 10);
+    } else if (name === "personalEmail") {
       value = value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100);
+    } else if (name === "officialEmailUser") {
+      value = value.replace(/[^a-zA-Z0-9._]/g, "").slice(0, 50);
     }
 
     setFormData((prevFormData) => {

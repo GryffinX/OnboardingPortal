@@ -7,8 +7,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 
-from ..models import OnboardingRequest
-from .utils import parse_software_list, dump_software_list, validate_generic_input
+from ..models import OnboardingRequest, AssetInventory
+from .utils import parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification
 
 
 DATE_LABEL_FORMAT = "%d %b %Y"
@@ -75,8 +75,9 @@ def serialize_request(record):
     if not subject_code:
         from ..models import UserProfile
         from django.contrib.auth.models import User
-        # Try to find the user by personal email
-        user_obj = User.objects.filter(email=record.personal_email).first()
+        from django.db.models import Q
+        # Try to find the user by personal or official email
+        user_obj = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).first()
         if user_obj:
             try:
                 subject_code = user_obj.profile.employee_code or ""
@@ -118,20 +119,133 @@ def serialize_request(record):
         "dateOfJoining": record.date_of_joining,
         
         # New Infrastructure Fields
+        "infraAdmin": _serialize_user(record.infra_admin),
         "infraAdminComment": record.infra_admin_comment,
         "infraExecutive": _serialize_user(record.infra_executive),
         "laptopModel": record.laptop_model,
         "laptopRam": record.laptop_ram,
         "laptopStorage": record.laptop_storage,
         "laptopProcessor": record.laptop_processor,
+        "laptopGpu": record.laptop_gpu,
+        "laptopAcknowledged": record.laptop_acknowledged,
     }
 
+# --- ASSET INVENTORY VIEWS ---
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_assets(request):
+    assets = AssetInventory.objects.all().order_by("asset_code")
+    asset_list = []
+    for asset in assets:
+        asset_list.append({
+            "id": asset.id,
+            "assetCode": asset.asset_code,
+            "laptopModel": asset.laptop_model,
+            "laptopProcessor": asset.laptop_processor,
+            "laptopRam": asset.laptop_ram,
+            "laptopStorage": asset.laptop_storage,
+            "laptopGpu": asset.laptop_gpu,
+            "isAssigned": asset.is_assigned
+        })
+    return JsonResponse({"assets": asset_list})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_asset(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        asset_code = (payload.get("assetCode") or "").strip()
+        
+        if not asset_code:
+            return JsonResponse({"message": "Asset code is required."}, status=400)
+            
+        # Removed uniqueness check to allow multi-candidate/repeat codes if needed, 
+        # though usually codes are unique per machine. 
+        # User said "one asset code can be used for multiple candidates".
+
+        asset = AssetInventory.objects.create(
+            asset_code=asset_code,
+            laptop_model=(payload.get("laptopModel") or "").strip(),
+            laptop_processor=(payload.get("laptopProcessor") or "").strip(),
+            laptop_ram=(payload.get("laptopRam") or "").strip(),
+            laptop_storage=(payload.get("laptopStorage") or "").strip(),
+            laptop_gpu=(payload.get("laptopGpu") or "").strip()
+        )
+        return JsonResponse({"message": "Asset added to inventory.", "asset": {
+            "id": asset.id, "assetCode": asset.asset_code, "laptopModel": asset.laptop_model
+        }})
+    except ValidationError as e:
+        return JsonResponse({"message": str(e)}, status=400)
+    except Exception:
+        return JsonResponse({"message": "Failed to create asset."}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_asset(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        asset_id = payload.get("id")
+        if not asset_id: return JsonResponse({"message": "ID required."}, status=400)
+        
+        asset = AssetInventory.objects.get(id=asset_id)
+        if "assetCode" in payload: asset.asset_code = payload["assetCode"].strip()
+        if "laptopModel" in payload: asset.laptop_model = payload["laptopModel"].strip()
+        if "laptopProcessor" in payload: asset.laptop_processor = payload["laptopProcessor"].strip()
+        if "laptopRam" in payload: asset.laptop_ram = payload["laptopRam"].strip()
+        if "laptopStorage" in payload: asset.laptop_storage = payload["laptopStorage"].strip()
+        if "laptopGpu" in payload: asset.laptop_gpu = payload["laptopGpu"].strip()
+        if "isAssigned" in payload: asset.is_assigned = payload["isAssigned"]
+        
+        asset.save()
+        return JsonResponse({"message": "Asset updated successfully."})
+    except AssetInventory.DoesNotExist:
+        return JsonResponse({"message": "Asset not found."}, status=404)
+    except Exception:
+        return JsonResponse({"message": "Failed to update asset."}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def delete_asset(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        asset_id = payload.get("id")
+        asset = AssetInventory.objects.get(id=asset_id)
+        if asset.is_assigned:
+            return JsonResponse({"message": "Assigned assets cannot be deleted."}, status=400)
+        asset.delete()
+        return JsonResponse({"message": "Asset deleted from inventory."})
+    except AssetInventory.DoesNotExist:
+        return JsonResponse({"message": "Asset not found."}, status=404)
+    except Exception:
+        return JsonResponse({"message": "Failed to delete asset."}, status=500)
 
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_requests(request):
     records = OnboardingRequest.objects.all().order_by("-submitted_at", "-id")
     return JsonResponse({"requests": [serialize_request(record) for record in records]})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def acknowledge_laptop(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        request_id = payload.get("id")
+        
+        if not request_id:
+            return JsonResponse({"message": "Request ID is required."}, status=400)
+            
+        record = OnboardingRequest.objects.get(id=request_id)
+        record.laptop_acknowledged = True
+        record.save()
+        
+        return JsonResponse({"message": "Laptop receipt acknowledged successfully.", "request": serialize_request(record)})
+    except OnboardingRequest.DoesNotExist:
+        return JsonResponse({"message": "Request not found."}, status=404)
+    except Exception as exc:
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -150,7 +264,20 @@ def save_request(request):
                 # Partial Update by ID
                 req = OnboardingRequest.objects.get(id=request_id)
                 if "stage" in payload: 
-                    req.stage = payload["stage"]
+                    old_stage = req.stage
+                    new_stage = payload["stage"]
+                    req.stage = new_stage
+                    
+                    # Notify the person responsible for the NEW stage if it changed
+                    if new_stage != old_stage:
+                        try:
+                            # We might need to save other fields first so they are in the record object passed to mail
+                            # But since this is in an atomic transaction, we can just call it with the current req object
+                            # However, for infra_executive_review, we need the assigned exec to be set
+                            pass 
+                        except Exception:
+                            pass
+
                     if req.stage == "stopped":
                         from django.contrib.auth.models import User
                         user = User.objects.filter(email=req.personal_email).first()
@@ -190,10 +317,22 @@ def save_request(request):
                 
                 if "assetCode" in payload:
                     new_asset_code = (payload["assetCode"] or "").strip()
-                    if new_asset_code and new_asset_code != req.asset_code:
-                        if OnboardingRequest.objects.filter(asset_code__iexact=new_asset_code).exclude(id=req.id).exists():
-                            return JsonResponse({"message": "This Asset Code has already been assigned to another user."}, status=400)
-                    req.asset_code = new_asset_code
+                    old_asset_code = req.asset_code
+                    
+                    if new_asset_code != old_asset_code:
+                        # 1. Mark new asset as assigned in inventory
+                        if new_asset_code:
+                            from ..models import AssetInventory
+                            AssetInventory.objects.filter(asset_code__iexact=new_asset_code).update(is_assigned=True)
+                        
+                        # 2. Mark old asset as available in inventory ONLY IF no one else is using it
+                        if old_asset_code:
+                            from ..models import AssetInventory
+                            is_still_used = OnboardingRequest.objects.filter(asset_code__iexact=old_asset_code).exclude(id=req.id).exists()
+                            if not is_still_used:
+                                AssetInventory.objects.filter(asset_code__iexact=old_asset_code).update(is_assigned=False)
+                        
+                        req.asset_code = new_asset_code
 
                 if "employeeCode" in payload:
                     from django.contrib.auth.models import User
@@ -224,6 +363,14 @@ def save_request(request):
                 if "infraAdminComment" in payload:
                     req.infra_admin_comment = (payload["infraAdminComment"] or "").strip()
                 
+                if "infraAdminId" in payload:
+                    from django.contrib.auth.models import User
+                    admin_id = payload["infraAdminId"]
+                    if admin_id:
+                        req.infra_admin = User.objects.filter(id=admin_id).first()
+                    else:
+                        req.infra_admin = None
+                
                 if "infraExecutive" in payload:
                     from django.contrib.auth.models import User
                     exec_id = payload["infraExecutive"]
@@ -240,6 +387,8 @@ def save_request(request):
                     req.laptop_storage = (payload["laptopStorage"] or "").strip()
                 if "laptopProcessor" in payload:
                     req.laptop_processor = (payload["laptopProcessor"] or "").strip()
+                if "laptopGpu" in payload:
+                    req.laptop_gpu = (payload["laptopGpu"] or "").strip()
                 
                 if "stopReason" in payload:
                     req.stop_reason = (payload["stopReason"] or "").strip()
@@ -254,6 +403,16 @@ def save_request(request):
                 
                 if "dateOfJoining" in payload:
                     req.date_of_joining = payload["dateOfJoining"]
+                
+                req.revision_count += 1
+                
+                # Check if we should notify next stage (called after potential field updates like infraExecutive)
+                if "stage" in payload and payload["stage"] != old_stage:
+                    try:
+                        send_workflow_notification(req, payload["stage"])
+                    except Exception as mail_err:
+                        # Log mail error but don't fail the whole request update if mail fails at intermediate stages
+                        print(f"Workflow stage notification failed: {mail_err}")
                 
                 req.save()
                 return JsonResponse({"message": "Request updated successfully.", "request": serialize_request(req)})
@@ -316,9 +475,16 @@ def save_request(request):
     except OnboardingRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found."}, status=404)
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        msg = ""
+        if hasattr(e, "message_dict"):
+            msg = "; ".join([f"{k}: {', '.join(v)}" for k, v in e.message_dict.items()])
+        elif hasattr(e, "messages"):
+            msg = " ".join(e.messages)
+        else:
+            msg = str(e)
+        return JsonResponse({"message": msg}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": str(exc)}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -332,11 +498,11 @@ def delete_request(request):
             
         with transaction.atomic():
             record = OnboardingRequest.objects.get(id=request_id)
-            email = record.personal_email
             
             # Delete associated User if exists (this will also delete UserProfile via CASCADE)
             from django.contrib.auth.models import User
-            user = User.objects.filter(email=email).first()
+            from django.db.models import Q
+            user = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).first()
             if user:
                 user.delete()
                 
@@ -345,4 +511,4 @@ def delete_request(request):
     except OnboardingRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found."}, status=404)
     except Exception as exc:
-        return JsonResponse({"message": str(exc)}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)

@@ -28,5 +28,10 @@ urlpatterns = [
     path("finalize-onboarding", onboarding.finalize_onboarding, name="finalize-onboarding"),
     path("requests", requests.get_requests, name="get-requests"),
     path("save-request", requests.save_request, name="save-request"),
+    path("acknowledge-laptop", requests.acknowledge_laptop, name="acknowledge-laptop"),
+    path("assets", requests.get_assets, name="get-assets"),
+    path("create-asset", requests.create_asset, name="create-asset"),
+    path("update-asset", requests.update_asset, name="update-asset"),
+    path("delete-asset", requests.delete_asset, name="delete-asset"),
     path("delete-request", requests.delete_request, name="delete-request"),
 ]

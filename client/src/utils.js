@@ -77,6 +77,7 @@ export function buildRequest(id, formData, overrides = {}) {
     managerApprovedAt: overrides.managerApprovedAt || "",
     hodApprovedAt: overrides.hodApprovedAt || "",
     dateOfJoining: overrides.dateOfJoining || "",
+    laptopAcknowledged: overrides.laptopAcknowledged || false,
   };
 }
 
@@ -109,14 +110,45 @@ export function validateGenericInput(value, fieldName) {
   if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
   if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
   if (/[%:;"'<>(){}[\]|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
+  if (value.length < 2) return `${fieldName} must be at least 2 characters.`;
   return null;
 }
 
 export function validateCommentInput(value, fieldName) {
-  const genericError = validateGenericInput(value, fieldName);
-  if (genericError) return genericError;
+  if (!value) return `${fieldName} is required.`;
+  if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
+  if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
+  if (/[<>|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
   if (value.length < 10 || value.length > 500) return `${fieldName} must be between 10 and 500 characters.`;
   return null;
+}
+
+export function validateEmployeeCode(code) {
+  if (!code) return "Employee code is required.";
+  if (!/^\d{4}$/.test(code)) return "Employee code must be exactly 4 digits.";
+  return null;
+}
+
+export function validateAssetCode(code) {
+  if (!code) return "Asset code is required.";
+  if (code.length < 5 || code.length > 20) return "Asset code must be between 5 and 20 characters.";
+  return validateGenericInput(code, "Asset code");
+}
+
+export function cleanNumericInput(value, maxLength) {
+  return value.replace(/\D/g, "").slice(0, maxLength);
+}
+
+export function cleanTextInput(value, maxLength) {
+  return value.replace(/[^a-zA-Z0-9 . -]/g, "").replace(/\s\s+/g, ' ').slice(0, maxLength);
+}
+
+export function cleanCommentInput(value, maxLength) {
+  return value.replace(/[^a-zA-Z0-9 .,!?-]/g, "").replace(/\s\s+/g, ' ').slice(0, maxLength);
+}
+
+export function cleanNameInput(value, maxLength) {
+  return value.replace(/[^a-zA-Z ]/g, "").slice(0, maxLength);
 }
 
 export function normalizeRequestRecord(request, fallbackId = 0) {
@@ -182,12 +214,15 @@ export function normalizeRequestRecord(request, fallbackId = 0) {
     laptopRam: request?.laptopRam || request?.laptop_ram || "",
     laptopStorage: request?.laptopStorage || request?.laptop_storage || "",
     laptopProcessor: request?.laptopProcessor || request?.laptop_processor || "",
+    laptopGpu: request?.laptopGpu || request?.laptop_gpu || "",
     stopReason: request?.stopReason || request?.stop_reason || "",
     reviewRequestedBy: request?.reviewRequestedBy || request?.review_requested_by,
     reviewReason: request?.reviewReason || request?.review_reason,
     revisionCount: request?.revisionCount || request?.revision_count,
     managerApprovedAt: request?.managerApprovedAt || request?.manager_approved_at,
     hodApprovedAt: request?.hodApprovedAt || request?.hod_approved_at,
+    dateOfJoining: request?.dateOfJoining || request?.date_of_joining,
+    laptopAcknowledged: request?.laptopAcknowledged || request?.laptop_acknowledged,
   });
 
   const resolvedOfficialEmail = officialEmailUser

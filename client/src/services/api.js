@@ -199,27 +199,63 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async deleteRequest(requestId) {
+  async deleteRequest(id) {
     const response = await fetch(`${apiBaseUrl}/api/delete-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: requestId }),
+      body: JSON.stringify({ id }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async saveRequest(request) {
-    const response = await fetch(`${apiBaseUrl}/api/save-request`, {
+  async acknowledgeLaptop(id) {
+    const response = await fetch(`${apiBaseUrl}/api/acknowledge-laptop`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
+      body: JSON.stringify({ id }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
-  
+
+  async getAssets() {
+    const response = await fetch(`${apiBaseUrl}/api/assets`);
+    const data = await response.json().catch(() => ({ assets: [] }));
+    return { ok: response.ok, data };
+  },
+
+  async createAsset(asset) {
+    const response = await fetch(`${apiBaseUrl}/api/create-asset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(asset),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async updateAsset(asset) {
+    const response = await fetch(`${apiBaseUrl}/api/update-asset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(asset),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async deleteAsset(id) {
+    const response = await fetch(`${apiBaseUrl}/api/delete-asset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
   getBaseUrl() {
     return apiBaseUrl;
   }
-};
+  };

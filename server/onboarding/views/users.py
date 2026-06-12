@@ -25,7 +25,7 @@ def create_user(request):
         errors["password"] = "Password is required."
     
     if errors:
-        return JsonResponse({"message": "Validation failed.", "errors": errors}, status=400)
+        return JsonResponse({"message": "Validation failed: " + " ".join(errors.values()), "errors": errors}, status=400)
 
     name = payload.get("name").strip()
     email = payload.get("email").strip()
@@ -61,7 +61,10 @@ def create_user(request):
             
             # Find department
             dept = None
-            if department_name:
+            if role in ["Infrastructure Admin", "Infrastructure Executive"]:
+                department_name = "Infrastructure"
+                dept, _ = Department.objects.get_or_create(name=department_name)
+            elif department_name:
                 dept = Department.objects.filter(name=department_name).first()
             
             # Create profile
@@ -96,6 +99,7 @@ def create_user(request):
         return JsonResponse({
             "message": "User created successfully. Welcome email sent.",
             "user": {
+                "id": user.id,
                 "name": name,
                 "email": email,
                 "role": role,
@@ -106,9 +110,9 @@ def create_user(request):
             }
         })
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": f"Error creating user: {str(exc)}"}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -125,7 +129,7 @@ def update_user(request):
 
     errors = validate_user_payload(payload)
     if errors:
-        return JsonResponse({"message": "Validation failed.", "errors": errors}, status=400)
+        return JsonResponse({"message": "Validation failed: " + " ".join(errors.values()), "errors": errors}, status=400)
 
     name = payload.get("name").strip()
     email = payload.get("email").strip()
@@ -163,7 +167,12 @@ def update_user(request):
             profile, created = UserProfile.objects.get_or_create(user=user)
             if role:
                 profile.role = normalize_role(role)
-            if department_name:
+            
+            if profile.role in ["Infrastructure Admin", "Infrastructure Executive"]:
+                department_name = "Infrastructure"
+                dept, _ = Department.objects.get_or_create(name=department_name)
+                profile.department = dept
+            elif department_name:
                 dept = Department.objects.filter(name=department_name).first()
                 profile.department = dept
             
@@ -183,6 +192,7 @@ def update_user(request):
             return JsonResponse({
                 "message": "User updated successfully.",
                 "user": {
+                    "id": user.id,
                     "name": f"{user.first_name} {user.last_name}".strip() or user.username,
                     "email": user.email,
                     "role": profile.role,
@@ -195,9 +205,9 @@ def update_user(request):
     except User.DoesNotExist:
         return JsonResponse({"message": "User not found."}, status=404)
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": f"Error updating user: {str(exc)}"}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -224,7 +234,7 @@ def request_profile_update_otp(request):
         )
         message.send(fail_silently=False)
     except Exception as exc:
-        return JsonResponse({"message": f"Failed to send OTP email: {str(exc)}"}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
     return JsonResponse({"message": "Verification OTP sent to your current email."})
 
@@ -250,7 +260,7 @@ def verify_profile_update(request):
 
     errors = validate_user_payload(new_data)
     if errors:
-        return JsonResponse({"message": "Validation failed.", "errors": errors}, status=400)
+        return JsonResponse({"message": "Validation failed: " + " ".join(errors.values()), "errors": errors}, status=400)
 
     try:
         with transaction.atomic():
@@ -304,6 +314,7 @@ def verify_profile_update(request):
             return JsonResponse({
                 "message": "Profile updated successfully.",
                 "user": {
+                    "id": user.id,
                     "name": f"{user.first_name} {user.last_name}".strip() or user.username,
                     "email": user.email,
                     "role": profile.role,
@@ -316,9 +327,9 @@ def verify_profile_update(request):
     except User.DoesNotExist:
         return JsonResponse({"message": "User not found."}, status=404)
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": f"Error updating profile: {str(exc)}"}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -343,9 +354,9 @@ def create_department(request):
         dept.save()
         return JsonResponse({"message": "Department created successfully.", "name": name})
     except ValidationError as e:
-        return JsonResponse({"message": str(e)}, status=400)
+        return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": str(exc)}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -357,6 +368,7 @@ def get_users(request):
         role, department_name, phone_number, employee_code, is_active = resolve_user_role_and_department(user)
             
         user_list.append({
+            "id": user.id,
             "name": f"{user.first_name} {user.last_name}".strip() or user.username,
             "email": user.email,
             "role": role,
@@ -386,7 +398,7 @@ def bulk_update_users_status(request):
         status_label = "activated" if is_active else "deactivated"
         return JsonResponse({"ok": True, "message": f"Successfully {status_label} {count} user accounts."})
     except Exception as exc:
-        return JsonResponse({"message": str(exc)}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 
 @csrf_exempt
@@ -409,4 +421,4 @@ def delete_user(request):
     except User.DoesNotExist:
         return JsonResponse({"message": "User not found."}, status=404)
     except Exception as exc:
-        return JsonResponse({"message": f"Error deleting user: {str(exc)}"}, status=500)
+        return JsonResponse({"message": "An internal server error occurred."}, status=500)
