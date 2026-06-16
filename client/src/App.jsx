@@ -69,7 +69,7 @@ function setRoutePage(page) {
 }
 
 function isWorkflowDashboardPage(page) {
-  return [pages.admin, pages.manager, pages.hod, pages.infraAdmin, pages.infraExecutive, pages.hr, pages.requests].includes(page);
+  return [pages.admin, pages.manager, pages.hod, pages.infraAdmin, pages.infraExecutive, pages.requests, pages.submit].includes(page);
 }
 
 function ConfirmationModal({ config, onCancel }) {
@@ -457,7 +457,6 @@ function App() {
     }
     
     if (role === "HR" || isHrDept) {
-      if (!allowed.includes(pages.hr)) allowed.push(pages.hr);
       if (!allowed.includes(pages.submit)) allowed.push(pages.submit);
     }
 
@@ -592,8 +591,8 @@ function App() {
     if (key === pages.infraExecutive) {
       return countPendingForPage(userFilteredRequests, pages.infraExecutive, pages);
     }
-    if (key === pages.hr) {
-      return countPendingForPage(userFilteredRequests, pages.hr, pages);
+    if (key === pages.hr || (key === pages.submit && isHrUser(currentUser))) {
+      return userFilteredRequests.filter((r) => r.stage === workflowStages.hr).length;
     }
     if (key === pages.requests) {
       return countPendingForUser(userFilteredRequests, currentUser, pages);
@@ -606,10 +605,10 @@ function App() {
     if (currentPage === pages.requests) {
       return isGlobalQueueViewer(currentUser) ? "All Requests" : "My Request Queue";
     }
+    if (currentPage === pages.submit && isHrUser(currentUser)) return "HR Review Queue";
     const labels = {
       [pages.manager]: "Line Manager Queue",
       [pages.hod]: "HOD Queue",
-      [pages.hr]: "HR Review Queue",
       [pages.infraAdmin]: "Infrastructure Admin Queue",
       [pages.infraExecutive]: "Infrastructure Executive Queue",
     };
@@ -617,7 +616,7 @@ function App() {
   };
 
   const getQueueSubtitle = () => {
-    if (isGlobalQueueViewer(currentUser) && [pages.admin, pages.requests, pages.hr].includes(currentPage)) {
+    if (isGlobalQueueViewer(currentUser) && [pages.admin, pages.requests].includes(currentPage)) {
       return "Full visibility across every onboarding request in the system.";
     }
     if (currentPage === pages.requests) {
@@ -630,7 +629,12 @@ function App() {
     setCurrentPage(pageKey);
     setSearchTerm("");
     setSelectedRequestId(null);
-    setRoleQueueFilter("pending");
+    if (pageKey === pages.submit && isHrUser(currentUser)) {
+      setRequestHistoryFilter("hr_review");
+    } else {
+      setRoleQueueFilter("pending");
+      setRequestHistoryFilter("wip");
+    }
   };
 
   const enhancedSaveRequest = async (payload, defaultActionType = "Update") => {
@@ -644,18 +648,18 @@ function App() {
   const handleOnboardingSubmit = async (formData) => {
     if (editingHrRequestId) {
       const { ok, data } = await enhancedSaveRequest({ 
-        id: editingHrRequestId, 
-        stage: workflowStages.manager, 
-        officialEmail: `${formData.officialEmailUser}${workflowOptions.officialEmailDomain || ""}`,
-        formData,
-        actionType: "HR Edit/Resubmit"
+      id: editingHrRequestId, 
+      stage: workflowStages.manager, 
+      officialEmail: `${formData.officialEmailUser}${workflowOptions.officialEmailDomain || ""}`,
+      formData,
+      actionType: "HR Edit/Resubmit"
       });
       if (ok) {
-        showNotice("success", "Update Successful", "The onboarding request has been updated and sent to Manager.");
-        await handleRefreshRequests();
-        setEditingHrRequestId(null);
-        setCurrentPage(pages.hr);
-        return { ok: true, message: data.message };
+      showNotice("success", "Update Successful", "The onboarding request has been updated and sent to Manager.");
+      await handleRefreshRequests();
+      setEditingHrRequestId(null);
+      setCurrentPage(pages.submit);
+      return { ok: true, message: data.message };
       } else {
         return { ok: false, message: data.message, errors: data.errors };
       }
@@ -713,7 +717,7 @@ function App() {
     }
 
     const globalViewer = isGlobalQueueViewer(currentUser);
-    const usesGlobalTabs = globalViewer && (currentPage === pages.admin || currentPage === pages.requests || currentPage === pages.hr);
+    const usesGlobalTabs = globalViewer && (currentPage === pages.admin || currentPage === pages.requests);
 
     if (usesGlobalTabs) {
       const wipCount = userFilteredRequests.filter((r) =>
@@ -755,9 +759,9 @@ function App() {
     let filterKey = null;
 
     if (isWorkflowDashboardPage(currentPage)) {
-      if (globalViewer && (currentPage === pages.admin || currentPage === pages.requests || currentPage === pages.hr)) {
+      if (globalViewer && (currentPage === pages.admin || currentPage === pages.requests || currentPage === pages.submit)) {
         filterKey = requestHistoryFilter;
-      } else if ([pages.manager, pages.hod, pages.hr, pages.infraAdmin, pages.infraExecutive, pages.requests].includes(currentPage)) {
+      } else if ([pages.manager, pages.hod, pages.infraAdmin, pages.infraExecutive, pages.requests].includes(currentPage)) {
         filterKey = roleQueueFilter;
       }
     }
@@ -976,7 +980,7 @@ function App() {
                 />
               )}
 
-              {isWorkflowDashboardPage(currentPage) && currentPage !== pages.admin && currentPage !== pages.hr && (
+              {isWorkflowDashboardPage(currentPage) && currentPage !== pages.admin && currentPage !== pages.hr && currentPage !== pages.submit && (
                 <>
                   {queueTabConfig.tabs.length > 0 ? (
                     <DashboardTabBar

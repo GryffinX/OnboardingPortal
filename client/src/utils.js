@@ -159,6 +159,7 @@ export function validateCommentInput(value, fieldName) {
   if (/[<>|\\~`^*+]/.test(value)) return `${fieldName} contains restricted special characters.`;
   if (value.length > 500) return `${fieldName} must be less than 500 characters.`;
   if (validateGibberish(value)) return `${fieldName} contains invalid or gibberish text. Please use meaningful words.`;
+  if (/^\d+$/.test(value)) return `${fieldName} cannot consist only of numbers.`;
   return null;
 }
 
@@ -386,6 +387,7 @@ export function normalizeRole(role) {
     "infrastructure admin": "Infrastructure Admin",
     "infrastructure executive": "Infrastructure Executive",
     employee: "Employee",
+    hr: "HR",
   };
 
   return canonicalRoles[role.trim().toLowerCase()] || "Employee";
@@ -406,7 +408,7 @@ function sameUserId(left, right) {
 
 export function isHrUser(user) {
   if (!user) return false;
-  return user.role === "HR" || user.department?.trim().toUpperCase() === "HR";
+  return normalizeRole(user.role) === "HR" || user.department?.trim().toUpperCase() === "HR";
 }
 
 export function isAdmin(user) {
@@ -416,7 +418,7 @@ export function isAdmin(user) {
 
 export function isGlobalQueueViewer(user) {
   if (!user) return false;
-  return normalizeRole(user.role) === "Admin" || isHrUser(user);
+  return isAdmin(user) || isHrUser(user);
 }
 
 export function isStaffWorkflowUser(user) {
@@ -434,6 +436,7 @@ export function getPendingStageForPage(page, pagesMap) {
     [pagesMap.hr]: workflowStages.hr,
     [pagesMap.infraAdmin]: workflowStages.infraAdmin,
     [pagesMap.infraExecutive]: workflowStages.infraExecutive,
+    [pagesMap.submit]: workflowStages.hr,
   };
   return stageByPage[page] || null;
 }

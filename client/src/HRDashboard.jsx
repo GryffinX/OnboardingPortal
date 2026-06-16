@@ -3,7 +3,7 @@ import DashboardTabBar from "./components/DashboardTabBar";
 import HRForm from "./HRForm";
 import RequestTable from "./components/RequestTable";
 import RequestDetailPanel from "./components/RequestDetailPanel";
-import { pages } from "./constants";
+import { pages, workflowStages } from "./constants";
 
 const HRDashboard = ({
   requests,
@@ -39,12 +39,13 @@ const HRDashboard = ({
   };
 
   const selectedRequest = requests.find(r => r.id === selectedRequestId) || null;
+  const hrReviewCount = requests.filter(r => r.stage === workflowStages.hr).length;
 
   return (
     <div className="hr-dashboard">
       <DashboardTabBar
         tabs={[
-          { key: "queue", label: "Review Queue", badge: queueTabConfig.tabs.find(t => t.key === 'hr_review')?.badge || 0 },
+          { key: "queue", label: "Review Queue", badge: hrReviewCount },
           { key: "submit", label: editingHrRequestId ? "Edit Request" : "New Onboarding" },
         ]}
         activeTab={activeTab}
@@ -52,42 +53,32 @@ const HRDashboard = ({
       />
 
       {activeTab === "queue" && (
-        <div style={{ marginTop: 20 }}>
-          {queueTabConfig.tabs.length > 0 && (
-            <DashboardTabBar
-              tabs={queueTabConfig.tabs}
-              activeTab={queueTabConfig.activeTab}
-              onTabChange={queueTabConfig.onTabChange}
-              style={{ marginBottom: 20 }}
-            />
-          )}
-          <div className="dashboard-layout" style={{ marginTop: queueTabConfig.tabs.length ? 0 : 20 }}>
-            <RequestDetailPanel
-              key={`${selectedRequest?.id}-${selectedRequest?.revisionCount || 0}`}
-              request={selectedRequest}
-              role={pages.hr}
-              userDepartment={currentUser?.department}
-              allUsers={allUsers}
-              onShowNotice={onShowNotice}
-              onSaveSoftware={onSaveSoftware}
-              onStartHrEdit={(id) => {
-                onStartHrEdit(id);
-                setActiveTab("submit");
-              }}
-              onApprove={onApprove}
-              onSendToHr={onSendToHr}
-              onStopCase={onStopCase}
-            />
-            <RequestTable
-              title={getQueueTitle()}
-              subtitle={getQueueSubtitle()}
-              searchTerm={searchTerm}
-              onSearchChange={onSearchChange}
-              requests={visibleRequests}
-              selectedRequestId={selectedRequestId}
-              onSelectRequest={onSelectRequest}
-            />
-          </div>
+        <div className="dashboard-layout" style={{ marginTop: 20 }}>
+          <RequestDetailPanel
+            key={`${selectedRequest?.id}-${selectedRequest?.revisionCount || 0}`}
+            request={selectedRequest}
+            role={pages.hr}
+            userDepartment={currentUser?.department}
+            allUsers={allUsers}
+            onShowNotice={onShowNotice}
+            onSaveSoftware={onSaveSoftware}
+            onStartHrEdit={(id) => {
+              onStartHrEdit(id);
+              setActiveTab("submit");
+            }}
+            onApprove={onApprove}
+            onSendToHr={onSendToHr}
+            onStopCase={onStopCase}
+          />
+          <RequestTable
+            title={getQueueTitle()}
+            subtitle={getQueueSubtitle()}
+            searchTerm={searchTerm}
+            onSearchChange={onSearchChange}
+            requests={visibleRequests}
+            selectedRequestId={selectedRequestId}
+            onSelectRequest={onSelectRequest}
+          />
         </div>
       )}
 

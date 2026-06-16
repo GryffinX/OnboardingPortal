@@ -72,6 +72,8 @@ def validate_comment_text(value):
         raise ValidationError("Comment cannot contain double spaces.")
     if not re.match(r"^[a-zA-Z0-9 .,!?-]+$", value):
         raise ValidationError("Comment can only contain letters, numbers, and basic punctuation (.,!?-).")
+    if value.isdigit():
+        raise ValidationError("Comment cannot consist only of numbers.")
     if len(value) > 500:
         raise ValidationError("Comment/Reason must be less than 500 characters.")
 
