@@ -43,3 +43,25 @@ export const rolePermissions = {
   "Infrastructure Executive": [pages.infraExecutive],
   Employee: [pages.status],
 };
+
+export const STAFF_WORKFLOW_ROLES = [
+  "Admin",
+  "Manager",
+  "HOD",
+  "Infrastructure Admin",
+  "Infrastructure Executive",
+  "HR",
+];
+
+export const globalQueueFilters = [
+  { key: "wip", label: "In Progress" },
+  { key: "hr_review", label: "HR Review" },
+  { key: "stopped", label: "Stopped" },
+  { key: "approved", label: "Approved" },
+];
+
+export const roleQueueFilters = [
+  { key: "pending", label: "Pending Review" },
+  { key: "approved", label: "Completed" },
+  { key: "all", label: "All Mine" },
+];

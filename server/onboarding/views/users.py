@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth.models import User
 from ..models import UserProfile, Department, PasswordResetOTP
 from .utils import normalize_role, validate_user_payload, validate_generic_input, generate_otp, resolve_user_role_and_department
+from .changelog import log_change, describe_user_changes
 from django.core.exceptions import ValidationError
 
 
@@ -68,9 +69,15 @@ def create_user(request):
                 dept = Department.objects.filter(name=department_name).first()
             
             # Create profile
-            profile = UserProfile(user=user, role=role, department=dept, phone_number=phone, employee_code=employee_code)
-            profile.full_clean()
             profile.save()
+
+            actor_id = payload.get("actorId")
+            if actor_id:
+                log_change(
+                    actor_id,
+                    "User Created",
+                    f"Created portal user account for {name} ({email}) with role {role}",
+                )
 
             # Send email to the new user
             try:
@@ -143,6 +150,23 @@ def update_user(request):
     try:
         with transaction.atomic():
             user = User.objects.get(email=original_email)
+
+            before = {
+                "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                "email": user.email,
+                "role": "",
+                "department": "",
+                "phone": "",
+                "employee_code": "",
+                "is_active": user.is_active,
+            }
+            try:
+                before["role"] = user.profile.role
+                before["department"] = user.profile.department.name if user.profile.department else ""
+                before["phone"] = user.profile.phone_number
+                before["employee_code"] = user.profile.employee_code
+            except UserProfile.DoesNotExist:
+                pass
             
             if name:
                 first_name = name.split(" ")[0]
@@ -188,6 +212,25 @@ def update_user(request):
             
             profile.full_clean()
             profile.save()
+
+            actor_id = payload.get("actorId")
+            if actor_id:
+                after = {
+                    "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                    "email": user.email,
+                    "role": profile.role,
+                    "department": profile.department.name if profile.department else "",
+                    "phone": profile.phone_number,
+                    "employee_code": profile.employee_code,
+                    "is_active": user.is_active,
+                    "password_changed": bool(password),
+                }
+                description = describe_user_changes(before, after)
+                log_change(
+                    actor_id,
+                    "User Updated",
+                    f"Modified account for {after['name']} ({after['email']}): {description}",
+                )
 
             return JsonResponse({
                 "message": "User updated successfully.",
@@ -307,8 +350,7 @@ def verify_profile_update(request):
             profile.full_clean()
             profile.save()
 
-            otp_record.is_verified = True
-            otp_record.save()
+            otp_record.delete()
 
             user.refresh_from_db()
             return JsonResponse({
@@ -352,6 +394,11 @@ def create_department(request):
         dept = Department(name=name)
         dept.full_clean()
         dept.save()
+
+        actor_id = payload.get("actorId")
+        if actor_id:
+            log_change(actor_id, "Department Created", f"Added department '{name}'")
+
         return JsonResponse({"message": "Department created successfully.", "name": name})
     except ValidationError as e:
         return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
@@ -396,6 +443,15 @@ def bulk_update_users_status(request):
         users.update(is_active=bool(is_active))
         
         status_label = "activated" if is_active else "deactivated"
+
+        actor_id = payload.get("actorId")
+        if actor_id:
+            log_change(
+                actor_id,
+                "Bulk Status Update",
+                f"Mass {status_label} {count} user accounts",
+            )
+
         return JsonResponse({"ok": True, "message": f"Successfully {status_label} {count} user accounts."})
     except Exception as exc:
         return JsonResponse({"message": "An internal server error occurred."}, status=500)
@@ -416,7 +472,17 @@ def delete_user(request):
 
     try:
         user = User.objects.get(email=email)
+        user_name = f"{user.first_name} {user.last_name}".strip() or user.username
         user.delete()
+
+        actor_id = payload.get("actorId")
+        if actor_id:
+            log_change(
+                actor_id,
+                "User Deleted",
+                f"Permanently removed account for {user_name} ({email})",
+            )
+
         return JsonResponse({"message": "User deleted successfully."})
     except User.DoesNotExist:
         return JsonResponse({"message": "User not found."}, status=404)

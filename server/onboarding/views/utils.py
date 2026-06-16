@@ -58,6 +58,22 @@ def validate_phone(phone):
     if len(phone) != 10: return "Phone number must be exactly 10 digits."
     return None
 
+def validate_gibberish(value):
+    if not value: return None
+    alnum_count = len(re.findall(r'[a-zA-Z0-9]', value))
+    if alnum_count < 1:
+        return "Input contains invalid or gibberish text. Please use more alphanumeric characters."
+    if len(value) > 3 and (alnum_count / len(value)) < 0.4:
+        return "Input contains invalid or gibberish text. Please use more alphanumeric characters."
+    if re.search(r'([a-zA-Z0-9])\1{3,}', value):
+        return "Input contains invalid or gibberish text (repeating characters)."
+    mashes = {"asdf", "qwer", "zxcv", "qwe", "asd", "zxc", "wef", "sdf", "xcv", "ert", "dfg", "cvb", "rty", "fgh", "vbn", "tyu", "ghj", "bnm", "hjkl", "uiop"}
+    words = re.split(r'[\s,.:;!?]+', value.lower())
+    for word in words:
+        if word in mashes:
+            return f"Input contains invalid or gibberish text ('{word}' is not allowed)."
+    return None
+
 def validate_generic_input(value, field_name):
     if not value: return f"{field_name} is required."
     if value.startswith(" ") or value.endswith(" "): return f"{field_name} cannot start or end with a space."
@@ -65,6 +81,8 @@ def validate_generic_input(value, field_name):
     if re.search(r"[%:;\"'<>(){}[\]|\\~`^!*+?]", value):
         return f"{field_name} contains restricted special characters."
     if len(value) < 2: return f"{field_name} must be at least 2 characters long."
+    gib_err = validate_gibberish(value)
+    if gib_err: return gib_err
     return None
 
 def sanitize_for_email(value):
@@ -118,7 +136,7 @@ def validate_payload(payload):
 def validate_employee_code(code):
     if not code: return "Employee code is required."
     if not code.isdigit(): return "Employee code must contain only digits."
-    if len(code) != 4: return "Employee code must be exactly 4 digits."
+    if len(code) != 5: return "Employee code must be exactly 5 digits."
     return None
 
 def validate_user_payload(payload):

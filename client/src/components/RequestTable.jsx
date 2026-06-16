@@ -94,6 +94,14 @@ function RequestTable({
                   <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
                     {request.employeeCode || "N/A"} | {request.requestCode}
                   </div>
+                  <div style={{ fontSize: '0.7rem', color: '#475569', marginTop: 4, lineHeight: 1.35 }}>
+                    <div title="Personal email">
+                      <span style={{ fontWeight: 600 }}>Personal:</span> {request.formData.personalEmail || "N/A"}
+                    </div>
+                    <div title="Proposed official email">
+                      <span style={{ fontWeight: 600 }}>Work:</span> {request.officialEmail || "Pending"}
+                    </div>
+                  </div>
                 </div>
                 <span>{request.formData.department}</span>
                 <span>{request.submittedAt}</span>

@@ -1,6 +1,7 @@
 import json
 import re
 from django.conf import settings
+from django.core import signing
 from django.core.mail import EmailMessage
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -75,10 +76,17 @@ def verify_otp(request):
     if not otp_record or not otp_record.is_valid():
         return JsonResponse({"message": "Invalid or expired OTP."}, status=400)
 
-    otp_record.is_verified = True
-    otp_record.save()
+    reset_token = signing.dumps(
+        {
+            "email": email,
+            "otp": otp,
+        },
+        salt="password-reset",
+    )
 
-    return JsonResponse({"message": "OTP verified successfully."})
+    otp_record.delete()
+
+    return JsonResponse({"message": "OTP verified successfully.", "resetToken": reset_token})
 
 
 @csrf_exempt
@@ -112,6 +120,7 @@ def login_view(request):
         return JsonResponse({
             "message": "Login successful",
             "user": {
+                "id": user.id,
                 "name": f"{user.first_name} {user.last_name}".strip() or user.username,
                 "email": user.email,
                 "role": role,
@@ -133,18 +142,18 @@ def reset_password(request):
     except json.JSONDecodeError:
         return JsonResponse({"message": "Invalid JSON payload."}, status=400)
 
-    email = (payload.get("email") or "").strip()
-    otp = (payload.get("otp") or "").strip()
+    reset_token = (payload.get("resetToken") or "").strip()
     password = (payload.get("password") or "").strip()
 
-    if not email or not otp or not password:
-        return JsonResponse({"message": "Email, OTP and new password are required."}, status=400)
+    if not reset_token or not password:
+        return JsonResponse({"message": "Verified reset session and new password are required."}, status=400)
 
-    # Check if OTP was verified
-    otp_record = PasswordResetOTP.objects.filter(email=email, otp=otp, is_verified=True).order_by("-created_at").first()
+    try:
+        token_data = signing.loads(reset_token, salt="password-reset", max_age=600)
+    except signing.BadSignature:
+        return JsonResponse({"message": "Invalid or expired reset session."}, status=400)
 
-    if not otp_record or not otp_record.is_valid():
-        return JsonResponse({"message": "Invalid request. Please verify OTP again."}, status=400)
+    email = (token_data.get("email") or "").strip()
 
     # Find user and reset password
     try:
@@ -154,9 +163,5 @@ def reset_password(request):
 
     user.set_password(password)
     user.save()
-
-    # Mark OTP as used/unverifiable
-    otp_record.is_verified = False
-    otp_record.save()
 
     return JsonResponse({"message": "Password reset successfully."})

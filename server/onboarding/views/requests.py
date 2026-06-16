@@ -7,8 +7,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 
-from ..models import OnboardingRequest, AssetInventory
+from ..models import OnboardingRequest, AssetInventory, validate_comment_text
 from .utils import parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification
+from .changelog import log_change, snapshot_request, describe_request_changes, is_admin_user, get_actor
+from .common import get_department_software_lists
 
 
 DATE_LABEL_FORMAT = "%d %b %Y"
@@ -71,6 +73,7 @@ def _serialize_user(user):
     }
 
 def serialize_request(record):
+    department_lists = get_department_software_lists(record.department)
     subject_code = record.employee_code or ""
     if not subject_code:
         from ..models import UserProfile
@@ -106,8 +109,8 @@ def serialize_request(record):
         "additionalSoftware": [],
         "managerSoftware": parse_software_list(record.manager_software),
         "hodSoftware": [],
-        "preInstalledSoftware": parse_software_list(record.pre_installed_software),
-        "employeeInstalledSoftware": parse_software_list(record.employee_installed_software),
+        "preInstalledSoftware": department_lists["preInstalledSoftware"],
+        "employeeInstalledSoftware": department_lists["employeeInstalledSoftware"],
         "assetCode": record.asset_code,
         "hodComment": record.hod_comment,
         "stopReason": record.stop_reason,
@@ -122,6 +125,7 @@ def serialize_request(record):
         "infraAdmin": _serialize_user(record.infra_admin),
         "infraAdminComment": record.infra_admin_comment,
         "infraExecutive": _serialize_user(record.infra_executive),
+        "infraSoftware": parse_software_list(record.infra_software),
         "laptopModel": record.laptop_model,
         "laptopRam": record.laptop_ram,
         "laptopStorage": record.laptop_storage,
@@ -138,6 +142,7 @@ def get_assets(request):
     assets = AssetInventory.objects.all().order_by("asset_code")
     asset_list = []
     for asset in assets:
+        assigned_count = OnboardingRequest.objects.filter(asset_code=asset.asset_code).exclude(asset_code="").count()
         asset_list.append({
             "id": asset.id,
             "assetCode": asset.asset_code,
@@ -146,7 +151,8 @@ def get_assets(request):
             "laptopRam": asset.laptop_ram,
             "laptopStorage": asset.laptop_storage,
             "laptopGpu": asset.laptop_gpu,
-            "isAssigned": asset.is_assigned
+            "assignedCount": assigned_count,
+            "isAssigned": assigned_count > 0 or asset.is_assigned,
         })
     return JsonResponse({"assets": asset_list})
 
@@ -172,13 +178,22 @@ def create_asset(request):
             laptop_storage=(payload.get("laptopStorage") or "").strip(),
             laptop_gpu=(payload.get("laptopGpu") or "").strip()
         )
+
+        actor_id = payload.get("actorId")
+        if actor_id:
+            log_change(
+                actor_id,
+                "Asset Created",
+                f"Added hardware asset {asset.asset_code} ({asset.laptop_model}) to inventory",
+            )
+
         return JsonResponse({"message": "Asset added to inventory.", "asset": {
             "id": asset.id, "assetCode": asset.asset_code, "laptopModel": asset.laptop_model
         }})
     except ValidationError as e:
         return JsonResponse({"message": str(e)}, status=400)
-    except Exception:
-        return JsonResponse({"message": "Failed to create asset."}, status=500)
+    except Exception as exc:
+        return JsonResponse({"message": f"Failed to create asset: {str(exc)}"}, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -189,6 +204,8 @@ def update_asset(request):
         if not asset_id: return JsonResponse({"message": "ID required."}, status=400)
         
         asset = AssetInventory.objects.get(id=asset_id)
+        old_code = asset.asset_code
+
         if "assetCode" in payload: asset.asset_code = payload["assetCode"].strip()
         if "laptopModel" in payload: asset.laptop_model = payload["laptopModel"].strip()
         if "laptopProcessor" in payload: asset.laptop_processor = payload["laptopProcessor"].strip()
@@ -198,11 +215,32 @@ def update_asset(request):
         if "isAssigned" in payload: asset.is_assigned = payload["isAssigned"]
         
         asset.save()
+
+        actor_id = payload.get("actorId")
+        if actor_id:
+            changes = []
+            if "assetCode" in payload and old_code != asset.asset_code:
+                changes.append(f"Asset Code: '{old_code}' → '{asset.asset_code}'")
+            for field, label in [
+                ("laptopModel", "Model"),
+                ("laptopProcessor", "Processor"),
+                ("laptopRam", "RAM"),
+                ("laptopStorage", "Storage"),
+                ("laptopGpu", "GPU"),
+            ]:
+                if field in payload:
+                    changes.append(f"{label} updated")
+            if "isAssigned" in payload:
+                status = "assigned" if asset.is_assigned else "unassigned"
+                changes.append(f"Marked as {status}")
+            desc = "; ".join(changes) if changes else f"Updated details for asset {old_code}"
+            log_change(actor_id, "Asset Updated", desc)
+
         return JsonResponse({"message": "Asset updated successfully."})
     except AssetInventory.DoesNotExist:
         return JsonResponse({"message": "Asset not found."}, status=404)
-    except Exception:
-        return JsonResponse({"message": "Failed to update asset."}, status=500)
+    except Exception as exc:
+        return JsonResponse({"message": f"Failed to update asset: {str(exc)}"}, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -211,12 +249,18 @@ def delete_asset(request):
         payload = json.loads(request.body.decode("utf-8") or "{}")
         asset_id = payload.get("id")
         asset = AssetInventory.objects.get(id=asset_id)
-        if asset.is_assigned:
-            return JsonResponse({"message": "Assigned assets cannot be deleted."}, status=400)
+        asset_code = asset.asset_code
+        assigned_count = OnboardingRequest.objects.filter(asset_code=asset_code).exclude(asset_code="").count()
+
+        if assigned_count > 0 or asset.is_assigned:
+            return JsonResponse({"message": f"This asset is assigned to {assigned_count} employee(s) and cannot be deleted."}, status=400)
         asset.delete()
+
+        actor_id = payload.get("actorId")
+        if actor_id:
+            log_change(actor_id, "Asset Deleted", f"Removed asset {asset_code} from inventory")
+
         return JsonResponse({"message": "Asset deleted from inventory."})
-    except AssetInventory.DoesNotExist:
-        return JsonResponse({"message": "Asset not found."}, status=404)
     except Exception:
         return JsonResponse({"message": "Failed to delete asset."}, status=500)
 
@@ -263,8 +307,9 @@ def save_request(request):
             if request_id:
                 # Partial Update by ID
                 req = OnboardingRequest.objects.get(id=request_id)
+                before = snapshot_request(req)
+                old_stage = req.stage
                 if "stage" in payload: 
-                    old_stage = req.stage
                     new_stage = payload["stage"]
                     req.stage = new_stage
                     
@@ -278,18 +323,6 @@ def save_request(request):
                         except Exception:
                             pass
 
-                    if req.stage == "stopped":
-                        from django.contrib.auth.models import User
-                        user = User.objects.filter(email=req.personal_email).first()
-                        if user:
-                            user.delete()
-                        
-                        # Scrub PII
-                        req.personal_email = f"deleted_{req.id}@stopped.local"
-                        req.employee_phone_number = f"99{str(req.id).zfill(8)}"
-                        req.employee_code = ""
-                        req.asset_code = ""
-                        req.official_email = ""
                 if "formData" in payload:
                     fd = payload["formData"]
                     
@@ -311,28 +344,16 @@ def save_request(request):
                     req.department = fd.get("department", req.department)
                     req.line_manager = fd.get("lineManager", req.line_manager)
                     req.hod = fd.get("hod", req.hod)
+
+                    software_lists = get_department_software_lists(req.department)
+                    req.pre_installed_software = dump_software_list(software_lists["preInstalledSoftware"])
+                    req.employee_installed_software = dump_software_list(software_lists["employeeInstalledSoftware"])
                 
                 if "officialEmail" in payload: req.official_email = payload["officialEmail"]
                 if "managerSoftware" in payload: req.manager_software = dump_software_list(payload["managerSoftware"])
                 
                 if "assetCode" in payload:
-                    new_asset_code = (payload["assetCode"] or "").strip()
-                    old_asset_code = req.asset_code
-                    
-                    if new_asset_code != old_asset_code:
-                        # 1. Mark new asset as assigned in inventory
-                        if new_asset_code:
-                            from ..models import AssetInventory
-                            AssetInventory.objects.filter(asset_code__iexact=new_asset_code).update(is_assigned=True)
-                        
-                        # 2. Mark old asset as available in inventory ONLY IF no one else is using it
-                        if old_asset_code:
-                            from ..models import AssetInventory
-                            is_still_used = OnboardingRequest.objects.filter(asset_code__iexact=old_asset_code).exclude(id=req.id).exists()
-                            if not is_still_used:
-                                AssetInventory.objects.filter(asset_code__iexact=old_asset_code).update(is_assigned=False)
-                        
-                        req.asset_code = new_asset_code
+                    req.asset_code = (payload["assetCode"] or "").strip()
 
                 if "employeeCode" in payload:
                     from django.contrib.auth.models import User
@@ -358,10 +379,22 @@ def save_request(request):
                             pass
                 
                 if "hodComment" in payload:
-                    req.hod_comment = (payload["hodComment"] or "").strip()
+                    val = (payload["hodComment"] or "").strip()
+                    if val:
+                        try:
+                            validate_comment_text(val)
+                        except ValidationError as ve:
+                            return JsonResponse({"message": str(ve)}, status=400)
+                    req.hod_comment = val
                 
                 if "infraAdminComment" in payload:
-                    req.infra_admin_comment = (payload["infraAdminComment"] or "").strip()
+                    val = (payload["infraAdminComment"] or "").strip()
+                    if val:
+                        try:
+                            validate_comment_text(val)
+                        except ValidationError as ve:
+                            return JsonResponse({"message": str(ve)}, status=400)
+                    req.infra_admin_comment = val
                 
                 if "infraAdminId" in payload:
                     from django.contrib.auth.models import User
@@ -404,7 +437,12 @@ def save_request(request):
                 if "dateOfJoining" in payload:
                     req.date_of_joining = payload["dateOfJoining"]
                 
-                req.revision_count += 1
+                if "infraSoftware" in payload:
+                    req.infra_software = dump_software_list(payload["infraSoftware"])
+                
+                # Revision count logic: only increment when sent for HR Review
+                if "stage" in payload and payload["stage"] == "hr_review":
+                    req.revision_count += 1
                 
                 # Check if we should notify next stage (called after potential field updates like infraExecutive)
                 if "stage" in payload and payload["stage"] != old_stage:
@@ -415,6 +453,13 @@ def save_request(request):
                         print(f"Workflow stage notification failed: {mail_err}")
                 
                 req.save()
+                
+                actor_id = payload.get("actorId")
+                action_type = payload.get("actionType", "Update")
+                if actor_id:
+                    description = describe_request_changes(before, req)
+                    log_change(actor_id, action_type, description, req)
+
                 return JsonResponse({"message": "Request updated successfully.", "request": serialize_request(req)})
 
             # Full Create/Update by requestCode
@@ -454,6 +499,10 @@ def save_request(request):
                 "date_of_joining": (payload.get("dateOfJoining") or "").strip(),
             }
 
+            software_lists = get_department_software_lists(defaults["department"])
+            defaults["pre_installed_software"] = dump_software_list(software_lists["preInstalledSoftware"])
+            defaults["employee_installed_software"] = dump_software_list(software_lists["employeeInstalledSoftware"])
+
             record, created = OnboardingRequest.objects.update_or_create(
                 request_code=request_code,
                 defaults=defaults,
@@ -464,6 +513,15 @@ def save_request(request):
                 record.submitted_at = submitted_at
                 record.save(update_fields=["submitted_at"])
                 record.refresh_from_db()
+
+            actor_id = payload.get("actorId")
+            if actor_id:
+                action_type = payload.get("actionType", "Request Created" if created else "Request Updated")
+                if created:
+                    description = f"Created onboarding request {record.request_code} for {record.employee_name}"
+                else:
+                    description = f"Updated onboarding request {record.request_code} for {record.employee_name}"
+                log_change(actor_id, action_type, description, record)
 
             return JsonResponse(
                 {
@@ -487,6 +545,39 @@ def save_request(request):
         return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 @csrf_exempt
+@require_http_methods(["GET"])
+def get_changelogs(request):
+    from django.utils import timezone
+    from ..models import ChangeLog
+
+    actor_id = request.GET.get("actorId")
+    actor = get_actor(actor_id)
+    if not is_admin_user(actor):
+        return JsonResponse({"message": "Access denied. Admin privileges required."}, status=403)
+
+    logs = ChangeLog.objects.select_related("request").all().order_by("-timestamp")
+    log_list = []
+    for log in logs:
+        # Use denormalized fields if relationship is missing (common for organizational changes)
+        req_code = log.request_code or (log.request.request_code if log.request else "N/A")
+        emp_name = log.employee_name or (log.request.employee_name if log.request else "System")
+        
+        # Convert UTC timestamp to local time (Asia/Kolkata as per settings)
+        local_time = timezone.localtime(log.timestamp)
+        
+        log_list.append({
+            "id": log.id,
+            "requestCode": req_code,
+            "employeeName": emp_name,
+            "actorName": log.actor_name,
+            "actorRole": log.actor_role,
+            "actionType": log.action_type,
+            "description": log.description,
+            "timestamp": local_time.strftime("%d %b %Y %H:%M:%S")
+        })
+    return JsonResponse({"changelogs": log_list})
+
+@csrf_exempt
 @require_http_methods(["POST"])
 def delete_request(request):
     try:
@@ -498,16 +589,29 @@ def delete_request(request):
             
         with transaction.atomic():
             record = OnboardingRequest.objects.get(id=request_id)
-            
-            # Delete associated User if exists (this will also delete UserProfile via CASCADE)
+            req_code = record.request_code
+            emp_name = record.employee_name
+            workflow_stages = {"manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"}
+            if record.stage in workflow_stages:
+                return JsonResponse({"message": "Stop the request first, then delete it."}, status=400)
+
+            # A request can only be deleted after the related user account has been removed.
             from django.contrib.auth.models import User
             from django.db.models import Q
             user = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).first()
             if user:
-                user.delete()
-                
+                return JsonResponse({"message": "Delete the linked user account first before deleting this request."}, status=400)
+
+            actor_id = payload.get("actorId")
+            if actor_id:
+                log_change(
+                    actor_id,
+                    "Request Deleted",
+                    f"Permanently deleted request {req_code} for {emp_name}",
+                )
+
             record.delete()
-            return JsonResponse({"ok": True, "message": "Onboarding request and associated user records deleted permanently."})
+            return JsonResponse({"ok": True, "message": "Stopped onboarding request deleted permanently."})
     except OnboardingRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found."}, status=404)
     except Exception as exc:

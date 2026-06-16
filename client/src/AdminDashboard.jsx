@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import "./App.css"; 
 import { api } from "./services/api";
-import { 
+import DashboardTabBar from "./components/DashboardTabBar";
+import {
   validateName, 
   validateEmail, 
   validateGenericInput,
@@ -29,6 +30,7 @@ function normalizeRole(role) {
 
 const AdminDashboard = ({ 
   users, 
+  currentUser,
   onAddUser, 
   onUpdateUser, 
   onDeleteUser, 
@@ -36,6 +38,7 @@ const AdminDashboard = ({
   onShowNotice,
   apiBaseUrl = "http://127.0.0.1:8000" 
 }) => {
+  const [activeTab, setActiveTab] = useState("users"); // users, software, hardware, logs
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [showModal, setShowModal] = useState(null); // null, 'add', 'edit', 'edit-software', 'edit-dept'
@@ -45,14 +48,24 @@ const AdminDashboard = ({
   const [editingDept, setEditingDept] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [newDepartmentName, setNewDepartmentName] = useState("");
-  const [workflowOptions, setWorkflowOptions] = useState({ preInstalledSoftware: [], employeeInstalledSoftware: [], officialEmailDomain: "" });
+  const [softwareCatalog, setSoftwareCatalog] = useState({});
+  const [selectedSoftwareDept, setSelectedSoftwareDept] = useState("Global Software");
   const [newSoftwareName, setNewSoftwareName] = useState("");
   const [newSoftwareCategory, setNewSoftwareCategory] = useState("preinstalled");
+  const [newSoftwareDept, setNewSoftwareDept] = useState("Global Software");
   const [isBulkUpdating, setIsLoading] = useState(false);
 
   const [assets, setAssets] = useState([]);
   const [newAsset, setNewAsset] = useState({ assetCode: '', laptopModel: '', laptopProcessor: '', laptopRam: '', laptopStorage: '', laptopGpu: '' });
   const [editingAsset, setEditingAsset] = useState(null);
+
+  const [changelogs, setChangelogs] = useState([]);
+  const [changelogSearch, setChangelogSearch] = useState("");
+
+  const fetchChangelogs = async () => {
+    const { ok, data } = await api.fetchChangelogs(currentUser?.id);
+    if (ok && data.changelogs) setChangelogs(data.changelogs);
+  };
 
   const fetchAssets = async () => {
     const { ok, data } = await api.getAssets();
@@ -61,11 +74,12 @@ const AdminDashboard = ({
 
   const handleAddAsset = async (e) => {
     e.preventDefault();
-    const { ok, data } = await api.createAsset(newAsset);
+    const { ok, data } = await api.createAsset({ ...newAsset, actorId: currentUser?.id });
     if (ok) {
       onShowNotice("success", "Asset Added", "Hardware inventory updated.");
       setNewAsset({ assetCode: '', laptopModel: '', laptopProcessor: '', laptopRam: '', laptopStorage: '', laptopGpu: '' });
       fetchAssets();
+      fetchChangelogs();
     } else {
       onShowNotice("error", "Error", data.message);
     }
@@ -73,21 +87,23 @@ const AdminDashboard = ({
 
   const handleEditAssetSubmit = async (e) => {
     e.preventDefault();
-    const { ok, data } = await api.updateAsset(editingAsset);
+    const { ok, data } = await api.updateAsset({ ...editingAsset, actorId: currentUser?.id });
     if (ok) {
       onShowNotice("success", "Asset Updated", "Inventory record modified.");
       setShowModal(null);
       fetchAssets();
+      fetchChangelogs();
     } else {
       onShowNotice("error", "Error", data.message);
     }
   };
 
   const onDeleteAsset = async (id) => {
-    const { ok, data } = await api.deleteAsset(id);
+    const { ok, data } = await api.deleteAsset({ id, actorId: currentUser?.id });
     if (ok) {
       onShowNotice("success", "Asset Deleted", "Removed from inventory.");
       fetchAssets();
+      fetchChangelogs();
     } else {
       onShowNotice("error", "Error", data.message);
     }
@@ -107,26 +123,23 @@ const AdminDashboard = ({
     }
   };
 
-  const fetchWorkflow = async () => {
+  const fetchCatalog = async () => {
     try {
-      const { ok, data } = await api.fetchWorkflowOptions();
+      const { ok, data } = await api.fetchSoftwareCatalog();
       if (ok && data) {
-        setWorkflowOptions({
-          preInstalledSoftware: Array.isArray(data.preInstalledSoftware) ? data.preInstalledSoftware : [],
-          employeeInstalledSoftware: Array.isArray(data.employeeInstalledSoftware) ? data.employeeInstalledSoftware : [],
-          officialEmailDomain: typeof data.officialEmailDomain === 'string' ? data.officialEmailDomain : '',
-        });
+        setSoftwareCatalog(data.catalog || {});
       }
     } catch (err) {
-      console.error('Failed to fetch workflow options', err);
+      console.error('Failed to fetch software catalog', err);
     }
   };
 
   useEffect(() => {
     const initDashboard = async () => {
       await fetchDepts();
-      await fetchWorkflow();
+      await fetchCatalog();
       await fetchAssets();
+      await fetchChangelogs();
     };
     initDashboard();
   }, [apiBaseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -168,19 +181,21 @@ const AdminDashboard = ({
     if (result?.ok) {
       setNewUser({ name: "", email: "", role: "Employee", password: "", department: "", phoneNumber: "", employeeCode: "" });
       setShowModal(null);
+      fetchChangelogs();
     }
   };
 
-  const handleEditUserSubmit = (e) => {
+  const handleEditUserSubmit = async (e) => {
     e.preventDefault();
     const nameError = validateName(editingUser.name);
     const emailError = validateEmail(editingUser.email);
     if (nameError || emailError) { onShowNotice("error", "Validation Error", nameError || emailError); return; }
     if (editingUser.password && editingUser.password.length < 8) { onShowNotice("error", "Validation Error", "Password must be at least 8 characters long."); return; }
 
-    onUpdateUser(editingUser);
+    await onUpdateUser(editingUser);
     setShowModal(null);
     setEditingUser(null);
+    fetchChangelogs();
   };
 
   const handleBulkStatusChange = (newStatus) => {
@@ -191,7 +206,7 @@ const AdminDashboard = ({
       tone: newStatus ? "primary" : "danger",
       onConfirm: async () => {
         setIsLoading(true);
-        const { ok, data } = await api.bulkUpdateUsersStatus(newStatus);
+        const { ok, data } = await api.bulkUpdateUsersStatus(newStatus, currentUser?.id);
         setIsLoading(false);
         if (ok) {
           onShowNotice("success", "Bulk Action Complete", data.message);
@@ -208,11 +223,12 @@ const AdminDashboard = ({
     const err = validateGenericInput(newDepartmentName, "Department name");
     if (err) { onShowNotice("error", "Validation Error", err); return; }
     
-    const { ok, data } = await api.createDepartment(newDepartmentName.trim());
+    const { ok, data } = await api.createDepartment(newDepartmentName.trim(), currentUser?.id);
     if (ok) {
       setNewDepartmentName("");
       fetchDepts();
       onShowNotice("success", "Department Created", `"${newDepartmentName}" added successfully.`);
+      fetchChangelogs();
     } else {
       onShowNotice("error", "Creation Failed", data.message || "Failed to create department");
     }
@@ -227,12 +243,14 @@ const AdminDashboard = ({
       editingSoftware.originalName, 
       editingSoftware.originalCategory,
       editingSoftware.newName,
-      editingSoftware.newCategory
+      editingSoftware.newCategory,
+      currentUser?.id
     );
     if (ok) {
       onShowNotice("success", "Software Updated", data.message);
       await fetchWorkflow();
       setShowModal(null);
+      fetchChangelogs();
     } else {
       onShowNotice("error", "Update Failed", data.message);
     }
@@ -243,261 +261,362 @@ const AdminDashboard = ({
     const err = validateGenericInput(editingDept.newName, "Department name");
     if (err) { onShowNotice("error", "Validation Error", err); return; }
 
-    const { ok, data } = await api.updateDepartment(editingDept.originalName, editingDept.newName);
+    const { ok, data } = await api.updateDepartment(editingDept.originalName, editingDept.newName, currentUser?.id);
     if (ok) {
       onShowNotice("success", "Department Updated", data.message);
       await fetchDepts();
       setShowModal(null);
+      fetchChangelogs();
     } else {
       onShowNotice("error", "Update Failed", data.message);
     }
   };
 
   const allActive = safeUsers.length > 0 && safeUsers.every(u => u.isActive);
+  const softwareDeptOptions = ["Global Software", ...departments.filter((dept) => dept !== "Global Software")];
+  const softwareDeptKey = selectedSoftwareDept || "Global Software";
+  const selectedSoftwareCatalog = softwareCatalog[softwareDeptKey] || { preinstalled: [], employee: [] };
 
   return (
     <div className="admin-dashboard">
-      <section className="dashboard-panel">
-        <div className="dashboard-head">
-          <div>
-            <h2>User Management</h2>
-            <p>Manage portal users and their access roles</p>
-          </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <label className="nav-pill" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: '#f1f5f9', color: '#1e293b', border: '1px solid #e2e8f0' }}>
-               <input 
-                 type="checkbox" 
-                 checked={allActive} 
-                 disabled={isBulkUpdating}
-                 onChange={(e) => handleBulkStatusChange(e.target.checked)} 
-               />
-               <span>{allActive ? "Deactivate All" : "Activate All"}</span>
-            </label>
-            <button className="primary-button" onClick={() => setShowModal('add')}>Add New User</button>
-          </div>
-        </div>
+      <DashboardTabBar
+        tabs={[
+          { key: "users", label: "Staff Accounts" },
+          { key: "software", label: "Catalog & Deptartments" },
+          { key: "hardware", label: "Hardware Inventory" },
+          { key: "logs", label: "Audit Log" },
+        ]}
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          if (tab === "logs") fetchChangelogs();
+        }}
+      />
 
-        <div className="dashboard-toolbar" style={{ display: "flex", gap: "16px" }}>
-          <input
-            className="dashboard-search"
-            style={{ flex: 1 }}
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name, email or employee code..."
-          />
-          <label className="dashboard-actor">
-            <span>Filter by Role</span>
-            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-              {roles.map((role) => <option key={role} value={role}>{role}</option>)}
-            </select>
-          </label>
-        </div>
-
-        <div className="request-table">
-          <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.5fr 0.8fr 1fr 0.6fr 1fr" }}>
-            <span>Identity</span>
-            <span>Email</span>
-            <span>Role</span>
-            <span style={{ textAlign: "center" }}>Department</span>
-            <span>Status</span>
-            <span>Actions</span>
-          </div>
-
-          <div className="request-rows">
-          {filteredUsers.length === 0 ? (
-            <div className="request-empty">No users found matching your filters.</div>
-          ) : (
-            filteredUsers.map((user, index) => {
-              const roleName = normalizeRole(user.role);
-              const roleAbbr = {
-                "Admin": "AD",
-                "Manager": "MN",
-                "HOD": "HD",
-                "Infrastructure Admin": "IA",
-                "Infrastructure Executive": "IE",
-                "Employee": "EM",
-                "HR": "HR"
-              }[roleName] || "??";
-
-              return (
-                <div key={index} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 0.8fr 1fr 0.6fr 1fr" }}>
-                  <div><strong>{user.name}</strong><div style={{ fontSize: '0.75rem', color: '#64748b' }}>Code: {user.employeeCode || "N/A"} | {user.phoneNumber || "No phone"}</div></div>
-                  <span style={{ fontSize: "0.9rem", color: "#475569" }}>{user.email}</span>
-                  <div>
-                    <span 
-                      className={`status-pill status-pill-${roleName.toLowerCase().replace(/\s+/g, '-')}`}
-                      title={roleName}
-                      style={{ minWidth: '32px' }}
-                    >
-                      {roleAbbr}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: "0.9rem", textAlign: "center" }}>{user.department || "N/A"}</span>
-                  <span className={`status-pill status-pill-${user.isActive ? 'approved' : 'stopped'}`}>{user.isActive ? 'Active' : 'Inactive'}</span>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button type="button" className="ghost-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1 }} onClick={() => { setEditingUser({...user, originalEmail: user.email, password: ""}); setShowModal('edit'); }}>Edit</button>
-                    <button type="button" className="warning-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }} onClick={() => onShowConfirm({
-                      title: "Delete User",
-                      message: `Are you sure you want to permanently delete user "${user.name}"?`,
-                      confirmLabel: "Delete User",
-                      tone: "danger",
-                      onConfirm: () => onDeleteUser(user.email)
-                    })}>Delete</button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-          </div>
-        </div>
-      </section>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 24, marginTop: 20 }}>
+      {activeTab === 'users' && (
         <section className="dashboard-panel">
           <div className="dashboard-head">
-            <div><h2>Software Catalog</h2><p>Manage pre-installed and employee-installed software</p></div>
+            <div>
+              <h2>User Management</h2>
+              <p>Manage portal users and their access roles</p>
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <label className="nav-pill" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: '#f1f5f9', color: '#1e293b', border: '1px solid #e2e8f0' }}>
+                <input 
+                  type="checkbox" 
+                  checked={allActive} 
+                  disabled={isBulkUpdating}
+                  onChange={(e) => handleBulkStatusChange(e.target.checked)} 
+                />
+                <span>{allActive ? "Deactivate All" : "Activate All"}</span>
+              </label>
+              <button className="primary-button" onClick={() => setShowModal('add')}>Add New User</button>
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            {['preinstalled', 'employee'].map(cat => (
-              <div key={cat}>
-                <h4 style={{ marginTop: 0 }}>{cat === 'preinstalled' ? "Company Provided" : "Employee Installed"}</h4>
-                <div className="software-list-admin" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(cat === 'preinstalled' ? workflowOptions.preInstalledSoftware : workflowOptions.employeeInstalledSoftware).map(item => (
-                    <div key={item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                      <span style={{ fontSize: '0.9rem' }}>{item}</span>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="ghost-button" style={{ padding: '2px 8px', fontSize: '0.75rem', height: 'auto' }} onClick={() => { setEditingSoftware({ originalName: item, originalCategory: cat, newName: item, newCategory: cat }); setShowModal('edit-software'); }}>Edit</button>
-                        <button className="ghost-button" style={{ color: '#ef4444', padding: '2px 8px', fontSize: '0.75rem', height: 'auto' }} onClick={() => onShowConfirm({
-                          title: "Delete Software",
-                          message: `Remove "${item}" from catalog?`,
-                          confirmLabel: "Delete",
-                          tone: "danger",
-                          onConfirm: async () => { const {ok, data} = await api.deleteSoftwareItem(item, cat); if(ok) fetchWorkflow(); else onShowNotice("error", "Error", data.message); }
-                        })}>Delete</button>
+          <div className="dashboard-toolbar" style={{ display: "flex", gap: "16px" }}>
+            <input
+              className="dashboard-search"
+              style={{ flex: 1 }}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name, email or employee code..."
+            />
+            <label className="dashboard-actor">
+              <span>Filter by Role</span>
+              <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+                {roles.map((role) => <option key={role} value={role}>{role}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="request-table">
+            <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.5fr 0.8fr 1fr 0.6fr 1fr" }}>
+              <span>Identity</span>
+              <span>Email</span>
+              <span>Role</span>
+              <span style={{ textAlign: "center" }}>Department</span>
+              <span>Status</span>
+              <span>Actions</span>
+            </div>
+
+            <div className="request-rows">
+            {filteredUsers.length === 0 ? (
+              <div className="request-empty">No users found matching your filters.</div>
+            ) : (
+              filteredUsers.map((user, index) => {
+                const roleName = normalizeRole(user.role);
+                const roleAbbr = {
+                  "Admin": "AD",
+                  "Manager": "MN",
+                  "HOD": "HD",
+                  "Infrastructure Admin": "IA",
+                  "Infrastructure Executive": "IE",
+                  "Employee": "EM",
+                  "HR": "HR"
+                }[roleName] || "??";
+
+                return (
+                  <div key={index} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 0.8fr 1fr 0.6fr 1fr" }}>
+                    <div><strong>{user.name}</strong><div style={{ fontSize: '0.75rem', color: '#64748b' }}>Code: {user.employeeCode || "N/A"} | {user.phoneNumber || "No phone"}</div></div>
+                    <span style={{ fontSize: "0.9rem", color: "#475569" }}>{user.email}</span>
+                    <div>
+                      <span 
+                        className={`status-pill status-pill-${roleName.toLowerCase().replace(/\s+/g, '-')}`}
+                        title={roleName}
+                        style={{ minWidth: '32px' }}
+                      >
+                        {roleAbbr}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "0.9rem", textAlign: "center" }}>{user.department || "N/A"}</span>
+                    <span className={`status-pill status-pill-${user.isActive ? 'approved' : 'stopped'}`}>{user.isActive ? 'Active' : 'Inactive'}</span>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button type="button" className="action-button action-button-edit" style={{ flex: 1 }} onClick={() => { setEditingUser({...user, originalEmail: user.email, password: ""}); setShowModal('edit'); }}>Edit</button>
+                      <button type="button" className="action-button action-button-delete" style={{ flex: 1 }} onClick={() => onShowConfirm({
+                        title: "Delete Only User",
+                        message: `Delete only the user account for "${user.name}"? The request will remain available until it is deleted separately.`,
+                        confirmLabel: "Delete User",
+                        tone: "danger",
+                        onConfirm: () => onDeleteUser(user.email),
+                      })}>
+                        Delete Only User
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'software' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 24 }}>
+          <section className="dashboard-panel">
+            <div className="dashboard-head" style={{ alignItems: "flex-end" }}>
+              <div>
+                <h2>Software Catalog</h2>
+                <p>View and manage the software assigned to one department at a time</p>
+              </div>
+              <label className="dashboard-actor">
+                <span>Department</span>
+                <select value={selectedSoftwareDept} onChange={(e) => setSelectedSoftwareDept(e.target.value)}>
+                  {softwareDeptOptions.map((dept) => (
+                    <option key={dept} value={dept}>{dept === "Global Software" ? "Global" : dept}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+              <div>
+                  <h3 style={{ margin: '0 0 16px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
+                  {softwareDeptKey === "Global Software" ? "Global" : softwareDeptKey}
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    {['preinstalled', 'employee'].map(cat => (
+                      <div key={cat}>
+                        <h4 style={{ marginTop: 0 }}>{cat === 'preinstalled' ? "Company Provided" : "Employee Installed"}</h4>
+                        <div className="software-list-admin" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {(selectedSoftwareCatalog[cat] || []).map(item => (
+                          <div key={`${cat}-${item}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                            <span style={{ fontSize: '0.9rem' }}>{item}</span>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="action-button action-button-edit" style={{ height: 'auto' }} onClick={() => { setEditingSoftware({ originalName: item, originalCategory: cat, originalDepartment: softwareDeptKey === 'Global Software' ? '' : softwareDeptKey, newName: item, newCategory: cat, newDepartment: softwareDeptKey === 'Global Software' ? '' : softwareDeptKey }); setShowModal('edit-software'); }}>Edit</button>
+                              <button className="action-button action-button-delete" style={{ height: 'auto' }} onClick={() => onShowConfirm({
+                                title: "Delete Software",
+                                message: `Remove "${item}" from catalog?`,
+                                confirmLabel: "Delete",
+                                tone: "danger",
+                                onConfirm: async () => { const dept = softwareDeptKey === 'Global Software' ? '' : softwareDeptKey; const {ok, data} = await api.deleteSoftwareItem(item, cat, dept, currentUser?.id); if(ok) { fetchCatalog(); fetchChangelogs(); } else onShowNotice("error", "Error", data.message); }
+                              })}>Delete</button>
+                            </div>
+                          </div>
+                        ))}
+                        {(selectedSoftwareCatalog[cat] || []).length === 0 && <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>No items</span>}
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
 
-          <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-            <h4 style={{ margin: '0 0 12px 0' }}>Add New Software</h4>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const softwareError = validateGenericInput(newSoftwareName, "Software name");
-              if (softwareError) { onShowNotice("error", "Validation Error", softwareError); return; }
-              const { ok } = await api.createSoftwareItem(newSoftwareName.trim(), newSoftwareCategory);
-              if (ok) { setNewSoftwareName(''); fetchWorkflow(); onShowNotice("success", "Software Added", "Catalog updated."); }
-            }} style={{ display: 'flex', gap: 12 }}>
-              <input 
-                value={newSoftwareName} 
-                onChange={(e) => setNewSoftwareName(cleanTextInput(e.target.value, 100))} 
-                placeholder="Software name" 
-                className="dashboard-search" 
-                style={{ flex: 2 }}
-                maxLength={100}
-              />
-              <select value={newSoftwareCategory} onChange={(e) => setNewSoftwareCategory(e.target.value)} className="dashboard-search" style={{ flex: 1 }}>
-                <option value="preinstalled">Company Provided</option>
-                <option value="employee">Employee Installed</option>
-              </select>
-              <button type="submit" className="primary-button">Add</button>
-            </form>
-          </div>
-        </section>
+            <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 12px 0' }}>Add New Software</h4>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const softwareError = validateGenericInput(newSoftwareName, "Software name");
+                if (softwareError) { onShowNotice("error", "Validation Error", softwareError); return; }
+                const { ok } = await api.createSoftwareItem(newSoftwareName.trim(), newSoftwareCategory, newSoftwareDept, currentUser?.id);
+                if (ok) { setNewSoftwareName(''); fetchCatalog(); fetchChangelogs(); onShowNotice("success", "Software Added", "Catalog updated."); }
+              }} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <input 
+                  value={newSoftwareName} 
+                  onChange={(e) => setNewSoftwareName(cleanTextInput(e.target.value, 100))} 
+                  placeholder="Software name" 
+                  className="dashboard-search" 
+                  style={{ flex: 2 }}
+                  maxLength={100}
+                />
+                <select value={newSoftwareCategory} onChange={(e) => setNewSoftwareCategory(e.target.value)} className="dashboard-search" style={{ flex: 1.5 }}>
+                  <option value="preinstalled">Company Provided</option>
+                  <option value="employee">Employee Installed</option>
+                </select>
+                <select value={newSoftwareDept} onChange={(e) => setNewSoftwareDept(e.target.value)} className="dashboard-search" style={{ flex: 1.5 }}>
+                  <option value="Global Software">Global</option>
+                  {departments.filter((dept) => dept !== "Global Software").map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                </select>
+                <button type="submit" className="primary-button">Add</button>
+              </form>
+            </div>
+          </section>
 
-        <section className="dashboard-panel">
-          <div className="dashboard-head"><div><h2>Departments</h2><p>Add or remove organization units</p></div></div>
-          <div className="software-list-admin" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {departments.map((dept) => (
-              <div key={dept} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{dept}</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="ghost-button" style={{ padding: '2px 8px', fontSize: '0.75rem', height: 'auto' }} onClick={() => { setEditingDept({ originalName: dept, newName: dept }); setShowModal('edit-dept'); }}>Edit</button>
-                  <button className="ghost-button" style={{ color: '#ef4444', padding: '2px 8px', fontSize: '0.75rem', height: 'auto' }} onClick={() => onShowConfirm({
-                    title: "Delete Department",
-                    message: `Delete "${dept}"?`,
-                    confirmLabel: "Delete",
-                    tone: "danger",
-                    onConfirm: async () => { const {ok, data} = await api.deleteDepartment(dept); if(ok) fetchDepts(); else onShowNotice("error", "Error", data.message); }
-                  })}>Delete</button>
+          <section className="dashboard-panel">
+            <div className="dashboard-head"><div><h2>Departments</h2><p>Add or remove organization units</p></div></div>
+            <div className="software-list-admin" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {departments.map((dept) => (
+                <div key={dept} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{dept}</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="action-button action-button-edit" style={{ height: 'auto' }} onClick={() => { setEditingDept({ originalName: dept, newName: dept }); setShowModal('edit-dept'); }}>Edit</button>
+                    <button className="action-button action-button-delete" style={{ height: 'auto' }} onClick={() => onShowConfirm({
+                      title: "Delete Department",
+                      message: `Delete "${dept}"?`,
+                      confirmLabel: "Delete",
+                      tone: "danger",
+                      onConfirm: async () => { const {ok, data} = await api.deleteDepartment(dept); if(ok) { fetchDepts(); fetchChangelogs(); } else onShowNotice("error", "Error", data.message); }
+                    })}>Delete</button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-            <h4 style={{ margin: '0 0 12px 0' }}>Add Department</h4>
-            <form onSubmit={handleAddDept} style={{ display: 'flex', gap: 12 }}>
-              <input 
-                value={newDepartmentName} 
-                onChange={(e) => setNewDepartmentName(cleanTextInput(e.target.value, 100))} 
-                placeholder="Dept Name" 
-                className="dashboard-search" 
-                style={{ flex: 1 }}
-                maxLength={100}
-              />
-              <button type="submit" className="primary-button">Add</button>
-            </form>
-          </div>
-        </section>
-      </div>
-
-      <section className="dashboard-panel" style={{ marginTop: 20 }}>
-        <div className="dashboard-head">
-          <div>
-            <h2>Hardware Asset Inventory</h2>
-            <p>Manage laptop assets and specifications for Infrastructure assignment</p>
-          </div>
-          <button className="primary-button" onClick={() => setShowModal('add-asset')}>Add New Asset</button>
+              ))}
+            </div>
+            <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 12px 0' }}>Add Department</h4>
+              <form onSubmit={handleAddDept} style={{ display: 'flex', gap: 12 }}>
+                <input 
+                  value={newDepartmentName} 
+                  onChange={(e) => setNewDepartmentName(cleanTextInput(e.target.value, 100))} 
+                  placeholder="Dept Name" 
+                  className="dashboard-search" 
+                  style={{ flex: 1 }}
+                  maxLength={100}
+                />
+                <button type="submit" className="primary-button">Add</button>
+              </form>
+            </div>
+          </section>
         </div>
-        <div className="request-table">
-          <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.5fr 1fr 0.6fr 0.6fr 1fr 0.6fr 1fr" }}>
-            <span>Asset Code</span>
-            <span>Laptop Model</span>
-            <span>Processor</span>
-            <span>RAM</span>
-            <span>Storage</span>
-            <span>GPU</span>
-            <span>Status</span>
-            <span>Actions</span>
+      )}
+
+      {activeTab === 'hardware' && (
+        <section className="dashboard-panel">
+          <div className="dashboard-head">
+            <div>
+              <h2>Hardware Asset Inventory</h2>
+              <p>Manage laptop assets and specifications for Infrastructure assignment</p>
+            </div>
+            <button className="primary-button" onClick={() => setShowModal('add-asset')}>Add New Asset</button>
           </div>
-          <div className="request-rows">
-            {assets.length === 0 ? (
-              <div className="request-empty">Inventory is empty. Add assets to enable Infrastructure assignment.</div>
-            ) : (
-              assets.map((asset) => (
-                <div key={asset.id} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 1fr 0.6fr 0.6fr 1fr 0.6fr 1fr" }}>
-                  <strong>{asset.assetCode}</strong>
-                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopModel}</span>
-                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopProcessor}</span>
-                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopRam}</span>
-                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopStorage}</span>
-                  <span style={{ fontSize: "0.9rem" }}>{asset.laptopGpu || "N/A"}</span>
-                  <span className={`status-pill status-pill-${asset.isAssigned ? 'approved' : 'pending'}`}>
-                    {asset.isAssigned ? 'Assigned' : 'Available'}
-                  </span>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button type="button" className="ghost-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1 }} onClick={() => { setEditingAsset({...asset}); setShowModal('edit-asset'); }}>Edit</button>
-                    {!asset.isAssigned && (
-                      <button type="button" className="warning-button" style={{ padding: "6px 12px", fontSize: "0.8rem", flex: 1, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }} onClick={() => onShowConfirm({
+          <div className="request-table">
+            <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.5fr 1fr 0.6fr 0.6fr 1fr 1fr 1fr" }}>
+              <span>Asset Code</span>
+              <span>Laptop Model</span>
+              <span>Processor</span>
+              <span>RAM</span>
+              <span>Storage</span>
+              <span>GPU</span>
+              <span>Assigned To</span>
+              <span>Actions</span>
+            </div>
+            <div className="request-rows">
+              {assets.length === 0 ? (
+                <div className="request-empty">Inventory is empty. Add assets to enable Infrastructure assignment.</div>
+              ) : (
+                assets.map((asset) => (
+                  <div key={asset.id} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 1fr 0.6fr 0.6fr 1fr 1fr 1fr" }}>
+                    <strong>{asset.assetCode}</strong>
+                    <span style={{ fontSize: "0.9rem" }}>{asset.laptopModel}</span>
+                    <span style={{ fontSize: "0.9rem" }}>{asset.laptopProcessor}</span>
+                    <span style={{ fontSize: "0.9rem" }}>{asset.laptopRam}</span>
+                    <span style={{ fontSize: "0.9rem" }}>{asset.laptopStorage}</span>
+                    <span style={{ fontSize: "0.9rem" }}>{asset.laptopGpu || "Integrated Graphics"}</span>
+                    <span style={{ fontWeight: 600, color: "#334155" }}>
+                      {asset.assignedCount || 0} employee{asset.assignedCount === 1 ? "" : "s"}
+                    </span>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button type="button" className="action-button action-button-edit" style={{ flex: 1 }} onClick={() => { setEditingAsset({...asset}); setShowModal('edit-asset'); }}>Edit</button>
+                      <button type="button" className="action-button action-button-delete" style={{ flex: 1 }} onClick={() => onShowConfirm({
                         title: "Delete Asset",
                         message: `Permanently remove asset "${asset.assetCode}" from inventory?`,
                         confirmLabel: "Delete Asset",
                         tone: "danger",
                         onConfirm: () => onDeleteAsset(asset.id)
                       })}>Delete</button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
+
+      {activeTab === 'logs' && (
+        <section className="dashboard-panel">
+          <div className="dashboard-head">
+            <div>
+              <h2>System Audit Log</h2>
+              <p>Track all approvals, edits, and administrative actions across the onboarding lifecycle</p>
+            </div>
+            <input
+              className="dashboard-search"
+              style={{ width: "300px" }}
+              type="text"
+              value={changelogSearch}
+              onChange={(e) => setChangelogSearch(e.target.value)}
+              placeholder="Search logs by employee or action..."
+            />
+          </div>
+          <div className="request-table">
+            <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1fr 1fr 1fr 2fr" }}>
+              <span>Timestamp</span>
+              <span>Target Employee</span>
+              <span>Action Type</span>
+              <span>Actor</span>
+              <span>Description</span>
+            </div>
+            <div className="request-rows" style={{ maxHeight: "600px", overflowY: "auto" }}>
+              {changelogs.length === 0 ? (
+                <div className="request-empty">No audit logs found.</div>
+              ) : (
+                changelogs
+                  .filter(log => 
+                    log.employeeName.toLowerCase().includes(changelogSearch.toLowerCase()) ||
+                    log.actionType.toLowerCase().includes(changelogSearch.toLowerCase()) ||
+                    log.description.toLowerCase().includes(changelogSearch.toLowerCase()) ||
+                    log.actorName.toLowerCase().includes(changelogSearch.toLowerCase()) ||
+                    (log.actorRole || "").toLowerCase().includes(changelogSearch.toLowerCase())
+                  )
+                  .map((log) => (
+                    <div key={log.id} className="request-row" style={{ gridTemplateColumns: "1.2fr 1fr 1fr 1fr 2fr" }}>
+                      <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{log.timestamp}</span>
+                      <strong>{log.employeeName}</strong>
+                      <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#475569" }}>{log.actionType}</span>
+                      <div>
+                        <span style={{ fontSize: "0.9rem" }}>{log.actorName}</span>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{log.actorRole}</div>
+                      </div>
+                      <span style={{ fontSize: "0.9rem" }}>{log.description}</span>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {showModal === 'add' && (
         <div className="modal-backdrop">
@@ -506,7 +625,7 @@ const AdminDashboard = ({
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleAddSubmit} style={{ display: "grid", gap: "16px" }}>
                 <div className="form-group"><label>Full Name</label><input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: cleanNameInput(e.target.value, 50) })} className="dashboard-search" maxLength={50} /></div>
-                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: cleanNumericInput(e.target.value, 4) })} className="dashboard-search" placeholder="e.g. 1001" maxLength={4} /></div>
+                <div className="form-group"><label>Employee Code</label><input type="text" required value={newUser.employeeCode} onChange={(e) => setNewUser({ ...newUser, employeeCode: cleanNumericInput(e.target.value, 5) })} className="dashboard-search" placeholder="e.g. 10001" maxLength={5} /></div>
                 <div className="form-group"><label>Email Address</label><input type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100) })} className="dashboard-search" maxLength={100} /></div>
                 <div className="form-group"><label>Phone Number</label><input type="text" required value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: cleanNumericInput(e.target.value, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
                 <div className="form-group">
@@ -553,7 +672,7 @@ const AdminDashboard = ({
             <div style={{ padding: "24px" }}>
               <form onSubmit={handleEditUserSubmit} style={{ display: "grid", gap: "16px" }}>
                 <div className="form-group"><label>Full Name</label><input type="text" required value={editingUser.name} onChange={(e) => setEditingUser({ ...editingUser, name: cleanNameInput(e.target.value, 50) })} className="dashboard-search" maxLength={50} /></div>
-                <div className="form-group"><label>Employee Code</label><input type="text" required value={editingUser.employeeCode} onChange={(e) => setEditingUser({ ...editingUser, employeeCode: cleanNumericInput(e.target.value, 4) })} className="dashboard-search" maxLength={4} /></div>
+                <div className="form-group"><label>Employee Code</label><input type="text" required value={editingUser.employeeCode} onChange={(e) => setEditingUser({ ...editingUser, employeeCode: cleanNumericInput(e.target.value, 5) })} className="dashboard-search" placeholder="e.g. 10001" maxLength={5} /></div>
                 <div className="form-group"><label>Email Address</label><input type="email" required value={editingUser.email} onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value.replace(/[^a-zA-Z0-9.@-]/g, "").slice(0, 100) })} className="dashboard-search" maxLength={100} /></div>
                 <div className="form-group"><label>Phone Number</label><input type="text" required value={editingUser.phoneNumber} onChange={(e) => setEditingUser({ ...editingUser, phoneNumber: cleanNumericInput(e.target.value, 10) })} className="dashboard-search" placeholder="10-digit number" maxLength={10} /></div>
                 <div className="form-group">
@@ -646,11 +765,11 @@ const AdminDashboard = ({
                     type="text" required 
                     value={showModal === 'add-asset' ? newAsset.assetCode : editingAsset.assetCode} 
                     onChange={(e) => {
-                      const val = cleanTextInput(e.target.value, 20);
+                      const val = e.target.value.toUpperCase().slice(0, 8);
                       if(showModal === 'add-asset') setNewAsset({...newAsset, assetCode: val});
                       else setEditingAsset({...editingAsset, assetCode: val});
                     }} 
-                    className="dashboard-search" placeholder="e.g. SEC-LP-101" maxLength={20} 
+                    className="dashboard-search" placeholder="e.g. LAP-1001" maxLength={8} 
                   />
                 </div>
                 <div className="form-group">
@@ -721,13 +840,13 @@ const AdminDashboard = ({
                   />
                 </div>
                 {showModal === 'edit-asset' && (
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <input 
-                      type="checkbox" 
-                      checked={editingAsset.isAssigned} 
-                      onChange={(e) => setEditingAsset({...editingAsset, isAssigned: e.target.checked})} 
-                    />
-                    <label style={{ margin: 0 }}>Currently Assigned to Employee</label>
+                  <div className="form-group" style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", color: "#475569" }}>
+                    <strong style={{ display: "block", marginBottom: "4px", color: "#1e293b" }}>
+                      Assignment Count
+                    </strong>
+                    <span style={{ fontSize: "0.9rem" }}>
+                      This asset is assigned to {editingAsset?.assignedCount || 0} employee{(editingAsset?.assignedCount || 0) === 1 ? "" : "s"}.
+                    </span>
                   </div>
                 )}
                 <button type="submit" className="primary-button" style={{ marginTop: "8px" }}>

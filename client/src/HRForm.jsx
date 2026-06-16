@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "./HRForm.css";
+import SoftwareSection from "./components/SoftwareSection";
 import { 
   validateName, 
   validateEmail, 
@@ -73,6 +74,10 @@ export default function HRForm({
     mailMessage: "",
   });
   const [staff, setStaff] = useState([]);
+  const [departmentSoftware, setDepartmentSoftware] = useState({
+    preInstalledSoftware: [],
+    employeeInstalledSoftware: [],
+  });
 
   useEffect(() => {
     const fetchStaff = async () => {
@@ -88,6 +93,42 @@ export default function HRForm({
     };
     fetchStaff();
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!formData.department) {
+      setDepartmentSoftware({
+        preInstalledSoftware: [],
+        employeeInstalledSoftware: [],
+      });
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchDepartmentSoftware = async () => {
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/api/workflow-options?department=${encodeURIComponent(formData.department)}`
+        );
+        const data = await response.json();
+
+        if (isMounted && response.ok) {
+          setDepartmentSoftware({
+            preInstalledSoftware: Array.isArray(data.preInstalledSoftware) ? data.preInstalledSoftware : [],
+            employeeInstalledSoftware: Array.isArray(data.employeeInstalledSoftware) ? data.employeeInstalledSoftware : [],
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch department software", err);
+      }
+    };
+
+    fetchDepartmentSoftware();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl, formData.department]);
 
   const departments = [...new Set(staff.map(u => u.department).filter(Boolean))];
   const managerOptions = staff
@@ -367,6 +408,25 @@ export default function HRForm({
               </select>
               {errors.hod ? <p className="hr-form-error">{errors.hod}</p> : null}
             </label>
+
+            {formData.department ? (
+              <div style={{ gridColumn: "1 / -1", display: "grid", gap: 16 }}>
+                <SoftwareSection
+                  title="Company Provided Software"
+                  tone="blue"
+                  items={departmentSoftware.preInstalledSoftware}
+                  emptyMessage="No company software configured for this department."
+                  showWhenEmpty
+                />
+                <SoftwareSection
+                  title="Employee Installed Software"
+                  tone="yellow"
+                  items={departmentSoftware.employeeInstalledSoftware}
+                  emptyMessage="No employee software configured for this department."
+                  showWhenEmpty
+                />
+              </div>
+            ) : null}
 
             <div className="hr-form-actions">
               <button

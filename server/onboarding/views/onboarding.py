@@ -1,6 +1,7 @@
 import json
 import random
 import string
+from django.db import transaction, models
 from django.conf import settings
 from django.core.mail import EmailMessage
 from django.http import JsonResponse
@@ -17,6 +18,8 @@ from .utils import (
     dump_software_list,
     send_workflow_notification
 )
+from .changelog import log_change
+from .common import get_department_software_lists
 from django.core.exceptions import ValidationError
 
 
@@ -43,6 +46,7 @@ def onboarding_requests_view(request):
         requests = OnboardingRequest.objects.all().order_by("-id")
         request_list = []
         for req in requests:
+            department_lists = get_department_software_lists(req.department)
             # Try to find the user by personal or official email to get their code
             subject_code = ""
             user_obj = User.objects.filter(models.Q(email=req.personal_email) | models.Q(email=req.official_email)).first()
@@ -71,8 +75,8 @@ def onboarding_requests_view(request):
                 "stage": req.stage,
                 "submittedAt": req.submitted_at.strftime("%d %b %Y"),
                 "lastUpdated": req.last_updated.strftime("%d %b %Y"),
-                "preInstalledSoftware": parse_software_list(req.pre_installed_software),
-                "employeeInstalledSoftware": parse_software_list(req.employee_installed_software),
+                "preInstalledSoftware": department_lists["preInstalledSoftware"],
+                "employeeInstalledSoftware": department_lists["employeeInstalledSoftware"],
                 "managerSoftware": parse_software_list(req.manager_software),
                 "hodSoftware": [],
                 "reviewRequestedBy": req.review_requested_by,
@@ -225,6 +229,9 @@ def onboarding_email(request):
             
             message, official_email = build_message(payload)
             
+            dept_name = payload["department"]
+            software_lists = get_department_software_lists(dept_name)
+            
             new_req = OnboardingRequest.objects.create(
                 request_code=req_code,
                 employee_name=payload["name"],
@@ -234,7 +241,9 @@ def onboarding_email(request):
                 department=payload["department"],
                 line_manager=payload["lineManager"],
                 hod=payload["hod"],
-                stage="manager_review"
+                stage="manager_review",
+                pre_installed_software=dump_software_list(software_lists["preInstalledSoftware"]),
+                employee_installed_software=dump_software_list(software_lists["employeeInstalledSoftware"])
             )
             
             # Send email only after DB create is successful in the atomic block
@@ -243,6 +252,15 @@ def onboarding_email(request):
             except Exception as mail_exc:
                 # If mail fails, we raise an exception to trigger the transaction rollback
                 raise Exception(f"Failed to send manager notification: {mail_exc}")
+
+            actor_id = payload.get("actorId")
+            if actor_id:
+                log_change(
+                    actor_id,
+                    "Request Submitted",
+                    f"HR submitted new onboarding request {req_code} for {payload['name']}",
+                    new_req,
+                )
 
     except Exception as exc:
         error_message = "Unable to complete request right now."
@@ -361,32 +379,30 @@ def finalize_onboarding(request):
                     body_lines = [
                         f"Hello {sanitize_for_email(name)},",
                         "",
-                        "Congratulations! Your onboarding has been fully approved.",
-                        "Your institutional account and IT profile have been created successfully.",
+                        "Welcome to the team! Your onboarding process has been successfully completed and approved.",
+                        "Your official institutional account and IT profile are now active.",
                         "",
-                        "--- ACCOUNT DETAILS ---",
-                        f"Employee Code: {sanitize_for_email(employee_code)}",
+                        "--- YOUR ACCOUNT CREDENTIALS ---",
                         f"Official Email: {official_email}",
-                        f"Default Password: {default_password}",
-                        "Please log in and change your password immediately via the 'Forgot Password' link.",
+                        f"Initial Password: {default_password}",
                         "",
-                        "--- IT ASSETS & SETUP ---",
-                        f"Hardware Asset Code: {asset_code}",
-                        f"Pre-installed Software: {pre_sw}",
-                        f"Software to install: {emp_sw}",
-                        f"Additional Software (Manager requested): {mgr_sw}",
+                        "--- NEXT STEPS ---",
+                        "1. Access the Onboarding Portal: http://localhost:5173/",
+                        "2. Use the 'Forgot Password' flow on the login page to reset your initial password to something secure.",
+                        "3. Log in with your new password to view your full profile and hardware details.",
                         "",
-                        "--- REPORTING STRUCTURE ---",
-                        f"Department: {sanitize_for_email(department_name)}",
-                        f"Line Manager: {sanitize_for_email(onb_req.line_manager) if onb_req else 'N/A'}",
-                        f"HOD: {sanitize_for_email(onb_req.hod) if onb_req else 'N/A'}",
+                        "--- YOUR ASSIGNED HARDWARE ---",
+                        f"Laptop Model & Asset Code: {asset_code}",
+                        f"Specifications: {onb_req.laptop_processor} | {onb_req.laptop_ram} | {onb_req.laptop_storage}",
+                        "",
+                        "We are excited to have you with us!",
                         "",
                         "Regards,",
-                        "Institutional HR Team"
+                        "Institutional HR & IT Team"
                     ]
 
                     message = EmailMessage(
-                        subject=f"Welcome to the Team! Your Onboarding is Approved ({employee_code})",
+                        subject=f"Welcome to the Team! Your Account is Ready ({employee_code})",
                         body="\n".join(body_lines),
                         from_email=settings.EMAIL_HOST_USER,
                         to=[onb_req.personal_email],
@@ -403,11 +419,22 @@ def finalize_onboarding(request):
                 if employee_code:
                     onb_req.employee_code = employee_code
                 onb_req.save()
+                
+                actor_id = payload.get("actorId")
+                if actor_id:
+                    log_change(
+                        actor_id,
+                        payload.get("actionType", "Final Approval"),
+                        f"Finalized onboarding for {onb_req.employee_name}; created account with employee code {employee_code or onb_req.employee_code}",
+                        onb_req,
+                    )
 
     except ValidationError as e:
         return JsonResponse({"message": " ".join(e.messages) if hasattr(e, "messages") else str(e)}, status=400)
     except Exception as exc:
-        return JsonResponse({"message": "An internal server error occurred."}, status=500)
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"message": f"An internal server error occurred: {str(exc)}"}, status=500)
 
     return JsonResponse({
         "message": "User account is active.",

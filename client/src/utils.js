@@ -65,11 +65,14 @@ export function buildRequest(id, formData, overrides = {}) {
     assetCode: overrides.assetCode || "",
     hodComment: overrides.hodComment || "",
     infraAdminComment: overrides.infraAdminComment || "",
+    infraAdmin: overrides.infraAdmin || null,
     infraExecutive: overrides.infraExecutive || null,
+    infraSoftware: normalizeSoftwareItems(overrides.infraSoftware),
     laptopModel: overrides.laptopModel || "",
     laptopRam: overrides.laptopRam || "",
     laptopStorage: overrides.laptopStorage || "",
     laptopProcessor: overrides.laptopProcessor || "",
+    laptopGpu: overrides.laptopGpu || "Integrated Graphics",
     stopReason: overrides.stopReason || "",
     reviewRequestedBy: overrides.reviewRequestedBy || "",
     reviewReason: overrides.reviewReason || "",
@@ -110,8 +113,41 @@ export function validateGenericInput(value, fieldName) {
   if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
   if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
   if (/[%:;"'<>(){}[\]|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
-  if (value.length < 2) return `${fieldName} must be at least 2 characters.`;
+  if (value.length < 2) return `${fieldName} must be at least 2 characters long.`;
+  if (validateGibberish(value)) return `${fieldName} contains invalid or gibberish text. Please use meaningful words.`;
   return null;
+}
+
+export function validateDepartmentName(dept) {
+  if (!value) return `${fieldName} is required.`;
+  if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
+  if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
+  if (/[%:;"'<>(){}[\]|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
+  if (value.length < 2) return `${fieldName} must be at least 2 characters long.`;
+  if (validateGibberish(value)) return `${fieldName} contains invalid or gibberish text. Please use meaningful words.`;
+  if (/[1-9]/.test(value)) return `${fieldName} cannot contain numbers.`;
+  return null;
+}
+export function validateGibberish(value) {
+  if (!value) return false;
+  
+  const alnumCount = (value.match(/[a-zA-Z0-9]/g) || []).length;
+  // Require at least 1 alphanumeric
+  if (alnumCount < 1) return true;
+  // If string is long enough, require 40% alnum
+  if (value.length > 3 && alnumCount / value.length < 0.4) return true;
+
+  // Check for 4 or more identical characters in a row
+  if (/([a-zA-Z0-9])\1{3,}/.test(value)) return true;
+
+  const words = value.toLowerCase().split(/[\s,.:;!?]+/);
+  const mashes = ["asdf", "qwer", "zxcv", "qwe", "asd", "zxc", "wef", "sdf", "xcv", "ert", "dfg", "cvb", "rty", "fgh", "vbn", "tyu", "ghj", "bnm", "hjkl", "uiop"];
+  
+  for (const word of words) {
+    if (mashes.includes(word)) return true;
+  }
+
+  return false;
 }
 
 export function validateCommentInput(value, fieldName) {
@@ -119,24 +155,30 @@ export function validateCommentInput(value, fieldName) {
   if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
   if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
   if (/[<>|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
-  if (value.length < 10 || value.length > 500) return `${fieldName} must be between 10 and 500 characters.`;
+  if (value.length > 500) return `${fieldName} must be less than 500 characters.`;
+  if (validateGibberish(value)) return `${fieldName} contains invalid or gibberish text. Please use meaningful words.`;
   return null;
 }
 
 export function validateEmployeeCode(code) {
   if (!code) return "Employee code is required.";
-  if (!/^\d{4}$/.test(code)) return "Employee code must be exactly 4 digits.";
+  if (!/^[1-9]\d{4}$/.test(code)) return "Employee code must be exactly 5 digits and cannot start with 0.";
   return null;
 }
 
 export function validateAssetCode(code) {
   if (!code) return "Asset code is required.";
-  if (code.length < 5 || code.length > 20) return "Asset code must be between 5 and 20 characters.";
-  return validateGenericInput(code, "Asset code");
+  if (!/^LAP-\d{4}$/.test(code)) return "Asset code must follow the format 'LAP-XXXX' (e.g. LAP-1001).";
+  return null;
 }
 
 export function cleanNumericInput(value, maxLength) {
-  return value.replace(/\D/g, "").slice(0, maxLength);
+  const digits = value.replace(/\D/g, "");
+  // Prevent leading zero if it's the first digit and not the only digit
+  if (digits.length > 1 && digits.startsWith("0")) {
+    return digits.slice(1, maxLength + 1);
+  }
+  return digits.slice(0, maxLength);
 }
 
 export function cleanTextInput(value, maxLength) {
@@ -209,7 +251,11 @@ export function normalizeRequestRecord(request, fallbackId = 0) {
     assetCode: request?.assetCode || request?.asset_code || "",
     hodComment: request?.hodComment || request?.hod_comment || "",
     infraAdminComment: request?.infraAdminComment || request?.infra_admin_comment || "",
+    infraAdmin: request?.infraAdmin || request?.infra_admin || null,
     infraExecutive: request?.infraExecutive || request?.infra_executive || null,
+    infraSoftware: normalizeSoftwareItems(
+      request?.infraSoftware || request?.infra_software,
+    ),
     laptopModel: request?.laptopModel || request?.laptop_model || "",
     laptopRam: request?.laptopRam || request?.laptop_ram || "",
     laptopStorage: request?.laptopStorage || request?.laptop_storage || "",
@@ -225,9 +271,7 @@ export function normalizeRequestRecord(request, fallbackId = 0) {
     laptopAcknowledged: request?.laptopAcknowledged || request?.laptop_acknowledged,
   });
 
-  const resolvedOfficialEmail = officialEmailUser
-    ? `${officialEmailUser}${request?.officialEmailDomain || ""}`
-    : officialEmail;
+  const resolvedOfficialEmail = officialEmail || (officialEmailUser ? `${officialEmailUser}${request?.officialEmailDomain || ""}` : "");
 
   return {
     ...normalizedRequest,
@@ -255,7 +299,7 @@ export function getStageMeta(stage) {
   if (stage === workflowStages.infraAdmin) {
     return {
       label: "Pending Infra Admin",
-      tone: "pending",
+      tone: "infra-admin",
       description: "Waiting for Infrastructure Admin assignment",
     };
   }
@@ -263,7 +307,7 @@ export function getStageMeta(stage) {
   if (stage === workflowStages.infraExecutive) {
     return {
       label: "Pending Infra Exec",
-      tone: "hod",
+      tone: "infra-exec",
       description: "Waiting for Infrastructure Executive hardware assignment",
     };
   }
@@ -343,4 +387,151 @@ export function normalizeRole(role) {
   };
 
   return canonicalRoles[role.trim().toLowerCase()] || "Employee";
+}
+
+const WIP_STAGES = [
+  workflowStages.manager,
+  workflowStages.hod,
+  workflowStages.hr,
+  workflowStages.infraAdmin,
+  workflowStages.infraExecutive,
+];
+
+function sameUserId(left, right) {
+  if (left == null || right == null) return false;
+  return String(left) === String(right);
+}
+
+export function isHrUser(user) {
+  if (!user) return false;
+  return user.role === "HR" || user.department?.trim().toUpperCase() === "HR";
+}
+
+export function isAdmin(user) {
+  if (!user) return false;
+  return normalizeRole(user.role) === "Admin";
+}
+
+export function isGlobalQueueViewer(user) {
+  if (!user) return false;
+  return normalizeRole(user.role) === "Admin" || isHrUser(user);
+}
+
+export function isStaffWorkflowUser(user) {
+  if (!user) return false;
+  const role = normalizeRole(user.role);
+  return role === "Admin" || role === "Manager" || role === "HOD"
+    || role === "Infrastructure Admin" || role === "Infrastructure Executive"
+    || isHrUser(user);
+}
+
+export function getPendingStageForPage(page, pagesMap) {
+  const stageByPage = {
+    [pagesMap.manager]: workflowStages.manager,
+    [pagesMap.hod]: workflowStages.hod,
+    [pagesMap.hr]: workflowStages.hr,
+    [pagesMap.infraAdmin]: workflowStages.infraAdmin,
+    [pagesMap.infraExecutive]: workflowStages.infraExecutive,
+  };
+  return stageByPage[page] || null;
+}
+
+export function requestBelongsToUserScope(request, user) {
+  if (!user || !request) return false;
+
+  const role = normalizeRole(user.role);
+  const name = user.name || "";
+  const userId = user.id;
+
+  if (isGlobalQueueViewer(user)) return true;
+
+  if (role === "Manager") {
+    return request.formData?.lineManager === name;
+  }
+
+  if (role === "HOD") {
+    return request.formData?.hod === name;
+  }
+
+  if (role === "Infrastructure Admin") {
+    if (request.stage === workflowStages.infraAdmin) {
+      return !request.infraAdmin || sameUserId(request.infraAdmin.id, userId);
+    }
+    if ([workflowStages.infraExecutive, workflowStages.approved].includes(request.stage)) {
+      return request.infraAdmin && sameUserId(request.infraAdmin.id, userId);
+    }
+    return false;
+  }
+
+  if (role === "Infrastructure Executive") {
+    if (request.stage === workflowStages.infraExecutive) {
+      return request.infraExecutive && sameUserId(request.infraExecutive.id, userId);
+    }
+    if (request.stage === workflowStages.approved) {
+      return request.infraExecutive && sameUserId(request.infraExecutive.id, userId);
+    }
+    return false;
+  }
+
+  return false;
+}
+
+export function filterRequestsForUserScope(requests, user) {
+  if (!user) return [];
+  if (isGlobalQueueViewer(user)) return requests;
+  return requests.filter((request) => requestBelongsToUserScope(request, user));
+}
+
+export function getPendingStageForUser(user, pagesMap) {
+  if (!user) return null;
+  if (isHrUser(user)) return workflowStages.hr;
+
+  const role = normalizeRole(user.role);
+  const pageByRole = {
+    Manager: pagesMap.manager,
+    HOD: pagesMap.hod,
+    "Infrastructure Admin": pagesMap.infraAdmin,
+    "Infrastructure Executive": pagesMap.infraExecutive,
+  };
+  return getPendingStageForPage(pageByRole[role], pagesMap);
+}
+
+export function applyQueueTabFilter(requests, filterKey, { user, currentPage, pagesMap }) {
+  if (!filterKey) return requests;
+
+  if (filterKey === "wip") {
+    return requests.filter((r) => WIP_STAGES.includes(r.stage));
+  }
+  if (filterKey === "hr_review") {
+    return requests.filter((r) => r.stage === workflowStages.hr);
+  }
+  if (filterKey === "stopped") {
+    return requests.filter((r) => r.stage === workflowStages.stopped);
+  }
+  if (filterKey === "approved") {
+    return requests.filter((r) => r.stage === workflowStages.approved);
+  }
+  if (filterKey === "all") {
+    return requests;
+  }
+  if (filterKey === "pending") {
+    const pendingStage = getPendingStageForPage(currentPage, pagesMap)
+      || getPendingStageForUser(user, pagesMap);
+    if (!pendingStage) return requests;
+    return requests.filter((r) => r.stage === pendingStage);
+  }
+
+  return requests;
+}
+
+export function countPendingForPage(requests, page, pagesMap) {
+  const pendingStage = getPendingStageForPage(page, pagesMap);
+  if (!pendingStage) return 0;
+  return requests.filter((r) => r.stage === pendingStage).length;
+}
+
+export function countPendingForUser(requests, user, pagesMap) {
+  const pendingStage = getPendingStageForUser(user, pagesMap);
+  if (!pendingStage) return 0;
+  return requests.filter((r) => r.stage === pendingStage).length;
 }

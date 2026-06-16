@@ -31,11 +31,11 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async resetPassword(email, otp, newPassword) {
+  async resetPassword(email, otp, newPassword, resetToken = "") {
     const response = await fetch(`${apiBaseUrl}/api/reset-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, otp, password: newPassword }),
+      body: JSON.stringify({ email, otp, password: newPassword, resetToken }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
@@ -47,21 +47,21 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async createUser(user) {
+  async createUser(user, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/create-user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(user),
+      body: JSON.stringify({ ...user, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async updateUser(user) {
+  async updateUser(user, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/update-user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(user),
+      body: JSON.stringify({ ...user, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
@@ -87,31 +87,41 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async deleteUser(email) {
+  async deleteUser(email, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/delete-user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async bulkUpdateUsersStatus(isActive) {
+  async bulkUpdateUsersStatus(isActive, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/bulk-update-users-status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive }),
+      body: JSON.stringify({ isActive, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async sendOnboardingMail(formData) {
+  async saveRequest(payload) {
+    const response = await fetch(`${apiBaseUrl}/api/save-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async sendOnboardingMail(formData, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/onboarding-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(formData),
+      body: JSON.stringify({ ...formData, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
@@ -133,77 +143,91 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async fetchWorkflowOptions() {
-    const response = await fetch(`${apiBaseUrl}/api/workflow-options`);
+  async fetchWorkflowOptions(department) {
+    const query = department ? `?department=${encodeURIComponent(department)}` : "";
+    const response = await fetch(`${apiBaseUrl}/api/workflow-options${query}`);
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async createSoftwareItem(name, category) {
+  async fetchSoftwareCatalog() {
+    const response = await fetch(`${apiBaseUrl}/api/software-catalog`);
+    const data = await response.json().catch(() => ({ catalog: {} }));
+    return { ok: response.ok, data };
+  },
+
+  async createSoftwareItem(name, category, department, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/create-software-item`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, category }),
+      body: JSON.stringify({ name, category, department, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async deleteSoftwareItem(name, category) {
+  async deleteSoftwareItem(name, category, department, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/delete-software-item`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, category }),
+      body: JSON.stringify({ name, category, department, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async updateSoftwareItem(originalName, originalCategory, newName, newCategory) {
+  async updateSoftwareItem(originalName, originalCategory, originalDepartment, newName, newCategory, newDepartment, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/update-software-item`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ originalName, originalCategory, newName, newCategory }),
+      body: JSON.stringify({ originalName, originalCategory, originalDepartment, newName, newCategory, newDepartment, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async createDepartment(name) {
+  async createDepartment(name, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/create-department`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async updateDepartment(originalName, newName) {
+  async updateDepartment(originalName, newName, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/update-department`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ originalName, newName }),
+      body: JSON.stringify({ originalName, newName, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async deleteDepartment(name) {
+  async deleteDepartment(name, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/delete-department`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async deleteRequest(id) {
+  async fetchChangelogs(actorId) {
+    const query = actorId ? `?actorId=${encodeURIComponent(actorId)}` : "";
+    const response = await fetch(`${apiBaseUrl}/api/changelogs${query}`);
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async deleteRequest(id, actorId) {
     const response = await fetch(`${apiBaseUrl}/api/delete-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
@@ -225,31 +249,31 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async createAsset(asset) {
+  async createAsset(payload) {
     const response = await fetch(`${apiBaseUrl}/api/create-asset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(asset),
+      body: JSON.stringify(payload),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async updateAsset(asset) {
+  async updateAsset(payload) {
     const response = await fetch(`${apiBaseUrl}/api/update-asset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(asset),
+      body: JSON.stringify(payload),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
 
-  async deleteAsset(id) {
+  async deleteAsset(payload) {
     const response = await fetch(`${apiBaseUrl}/api/delete-asset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify(payload),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };

@@ -7,6 +7,7 @@ import re
 
 def validate_generic_text(value):
     if not value: return
+    validate_gibberish(value)
     if value.startswith(" ") or value.endswith(" "):
         raise ValidationError("Value cannot start or end with a space.")
     if "  " in value:
@@ -16,19 +17,26 @@ def validate_generic_text(value):
     if len(value) < 2:
         raise ValidationError("Value must be at least 2 characters long.")
 
-def validate_comment_text(value):
+def validate_gibberish(value):
     if not value: return
-    if value.startswith(" ") or value.endswith(" "):
-        raise ValidationError("Comment cannot start or end with a space.")
-    if "  " in value:
-        raise ValidationError("Comment cannot contain double spaces.")
-    if not re.match(r"^[a-zA-Z0-9 .,!?-]+$", value):
-        raise ValidationError("Comment can only contain letters, numbers, and basic punctuation (.,!?-).")
-    if len(value) < 10 or len(value) > 500:
-        raise ValidationError("Comment/Reason must be between 10 and 500 characters.")
+    alnum_count = len(re.findall(r'[a-zA-Z0-9]', value))
+    if alnum_count < 1:
+        raise ValidationError("Input contains invalid or gibberish text. Please use more alphanumeric characters.")
+    if len(value) > 3 and (alnum_count / len(value)) < 0.4:
+        raise ValidationError("Input contains invalid or gibberish text. Please use more alphanumeric characters.")
+        
+    if re.search(r'([a-zA-Z0-9])\1{3,}', value):
+        raise ValidationError("Input contains invalid or gibberish text (repeating characters).")
+        
+    words = re.split(r'[\s,.:;!?]+', value.lower())
+    mashes = {"asdf", "qwer", "zxcv", "qwe", "asd", "zxc", "wef", "sdf", "xcv", "ert", "dfg", "cvb", "rty", "fgh", "vbn", "tyu", "ghj", "bnm", "hjkl", "uiop"}
+    for word in words:
+        if word in mashes:
+            raise ValidationError(f"Input contains invalid or gibberish text ('{word}' is not allowed).")
 
 def validate_employee_name(value):
     if not value: return
+    validate_gibberish(value)
     if value.startswith(" ") or value.endswith(" "):
         raise ValidationError("Name cannot start or end with a space.")
     if "  " in value:
@@ -45,19 +53,32 @@ def validate_phone_number(value):
         raise ValidationError("Phone number must contain only digits.")
     if len(value) != 10:
         raise ValidationError("Phone number must be exactly 10 digits.")
+    if value.startswith("0"):
+        raise ValidationError("Phone number cannot start with 0.")
 
 def validate_employee_code(value):
     if not value: return
     if not value.isdigit():
         raise ValidationError("Employee Code must contain only digits.")
-    if len(value) != 4:
-        raise ValidationError("Employee Code must be exactly 4 digits.")
+    if not re.match(r"^[1-9]\d{4}$", value):
+        raise ValidationError("Employee Code must be exactly 5 digits and cannot start with 0.")
+
+def validate_comment_text(value):
+    if not value: return
+    validate_gibberish(value)
+    if value.startswith(" ") or value.endswith(" "):
+        raise ValidationError("Comment cannot start or end with a space.")
+    if "  " in value:
+        raise ValidationError("Comment cannot contain double spaces.")
+    if not re.match(r"^[a-zA-Z0-9 .,!?-]+$", value):
+        raise ValidationError("Comment can only contain letters, numbers, and basic punctuation (.,!?-).")
+    if len(value) > 500:
+        raise ValidationError("Comment/Reason must be less than 500 characters.")
 
 def validate_asset_code(value):
     if not value: return
-    validate_generic_text(value)
-    if len(value) < 5 or len(value) > 20:
-        raise ValidationError("Asset Code must be between 5 and 20 characters.")
+    if not re.match(r"^LAP-\d{4}$", value):
+        raise ValidationError("Asset Code must follow the format 'LAP-XXXX' (e.g. LAP-1001).")
 
 class PasswordResetOTP(models.Model):
     email = models.EmailField(db_index=True)
@@ -111,6 +132,7 @@ class SoftwareCatalogItem(models.Model):
         (CATEGORY_EMPLOYEE, "Employee-installed"),
     ]
 
+    department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name="software_items", null=True, blank=True)
     name = models.CharField(max_length=150, validators=[validate_generic_text])
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
@@ -119,7 +141,7 @@ class SoftwareCatalogItem(models.Model):
     class Meta:
         ordering = ["sort_order", "name"]
         constraints = [
-            models.UniqueConstraint(fields=["name", "category"], name="unique_software_catalog_item_per_category"),
+            models.UniqueConstraint(fields=["name", "category", "department"], name="unique_software_catalog_item_per_dept"),
         ]
 
     def clean(self):
@@ -134,7 +156,7 @@ class AssetInventory(models.Model):
     laptop_processor = models.CharField(max_length=100, validators=[validate_generic_text])
     laptop_ram = models.CharField(max_length=50, validators=[validate_generic_text])
     laptop_storage = models.CharField(max_length=50, validators=[validate_generic_text])
-    laptop_gpu = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
+    laptop_gpu = models.CharField(max_length=100, blank=True, default="Integrated Graphics", validators=[validate_generic_text])
     is_assigned = models.BooleanField(default=False, db_index=True)
 
     class Meta:
@@ -188,13 +210,14 @@ class OnboardingRequest(models.Model):
     infra_admin = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="managed_infra_tasks")
     infra_admin_comment = models.TextField(blank=True, validators=[validate_comment_text])
     infra_executive = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_infra_tasks")
+    infra_software = models.TextField(blank=True, default="")
     
     # Laptop Specifications
     laptop_model = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
     laptop_ram = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
     laptop_storage = models.CharField(max_length=50, blank=True, validators=[validate_generic_text])
     laptop_processor = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
-    laptop_gpu = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
+    laptop_gpu = models.CharField(max_length=100, blank=True, default="Integrated Graphics", validators=[validate_generic_text])
     laptop_acknowledged = models.BooleanField(default=False)
 
     def clean(self):
@@ -223,3 +246,20 @@ class OnboardingRequest(models.Model):
 
     def __str__(self):
         return f"{self.request_code} - {self.employee_name}"
+
+class ChangeLog(models.Model):
+    request = models.ForeignKey(OnboardingRequest, on_delete=models.SET_NULL, null=True, blank=True, related_name="changelogs")
+    request_code = models.CharField(max_length=50, blank=True)
+    employee_name = models.CharField(max_length=100, blank=True)
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    actor_name = models.CharField(max_length=100, blank=True)
+    actor_role = models.CharField(max_length=50, blank=True)
+    action_type = models.CharField(max_length=50)
+    description = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"[{self.timestamp}] {self.actor_name} ({self.action_type}): {self.description}"

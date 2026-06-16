@@ -1,6 +1,6 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
-from onboarding.models import OnboardingRequest, Department, UserProfile, AssetInventory
+from onboarding.models import OnboardingRequest, Department, UserProfile, AssetInventory, SoftwareCatalogItem
 from django.core import mail
 import json
 
@@ -9,6 +9,28 @@ class CompleteOnboardingFlowTest(TestCase):
         self.client = Client()
         self.dept_it = Department.objects.create(name="IT")
         self.dept_infra = Department.objects.create(name="Infrastructure")
+        self.dept_finance = Department.objects.create(name="Finance")
+
+        SoftwareCatalogItem.objects.create(
+            name="IT Base Image",
+            category=SoftwareCatalogItem.CATEGORY_PREINSTALLED,
+            department=self.dept_it,
+        )
+        SoftwareCatalogItem.objects.create(
+            name="IT Dev Tools",
+            category=SoftwareCatalogItem.CATEGORY_EMPLOYEE,
+            department=self.dept_it,
+        )
+        SoftwareCatalogItem.objects.create(
+            name="Finance Base Image",
+            category=SoftwareCatalogItem.CATEGORY_PREINSTALLED,
+            department=self.dept_finance,
+        )
+        SoftwareCatalogItem.objects.create(
+            name="Finance Audit Tools",
+            category=SoftwareCatalogItem.CATEGORY_EMPLOYEE,
+            department=self.dept_finance,
+        )
         
         # Admin User
         self.admin_user = User.objects.create_superuser(username="admin@test.com", email="admin@test.com", password="password")
@@ -49,6 +71,8 @@ class CompleteOnboardingFlowTest(TestCase):
         self.assertEqual(req.stage, "manager_review")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("manager@test.com", mail.outbox[0].to)
+        self.assertEqual(json.loads(req.pre_installed_software), ["IT Base Image"])
+        self.assertEqual(json.loads(req.employee_installed_software), ["IT Dev Tools"])
         mail.outbox.clear()
 
         # 2. Manager Review (Update software, approve to HOD)
@@ -164,6 +188,43 @@ class CompleteOnboardingFlowTest(TestCase):
         self.assertIn("newemp@test.com", mail.outbox[0].to)
         self.assertIn("Welcome to the Team", mail.outbox[0].subject)
         mail.outbox.clear()
+
+    def test_department_change_refreshes_software_lists(self):
+        req = OnboardingRequest.objects.create(
+            request_code="ONB-CHANGE-DEPT",
+            employee_name="Department Switch",
+            personal_email="switch@test.com",
+            employee_phone_number="1234500000",
+            department="IT",
+            line_manager="Manager One",
+            hod="HOD One",
+            stage="manager_review",
+            pre_installed_software=json.dumps(["IT Base Image"]),
+            employee_installed_software=json.dumps(["IT Dev Tools"]),
+        )
+
+        response = self.client.post(
+            "/api/save-request",
+            data=json.dumps({
+                "id": req.id,
+                "formData": {
+                    "name": "Department Switch",
+                    "employeePhoneNumber": "1234500000",
+                    "personalEmail": "switch@test.com",
+                    "officialEmailUser": "switch.user",
+                    "department": "Finance",
+                    "lineManager": "Manager One",
+                    "hod": "HOD One",
+                },
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        req.refresh_from_db()
+        self.assertEqual(req.department, "Finance")
+        self.assertEqual(json.loads(req.pre_installed_software), ["Finance Base Image"])
+        self.assertEqual(json.loads(req.employee_installed_software), ["Finance Audit Tools"])
         
     def test_hr_review_stop_case(self):
         # Create request at manager stage

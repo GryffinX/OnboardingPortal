@@ -101,32 +101,93 @@
 
 .table-filters {
   display: flex;
-  background: #f1f5f9;
-  padding: 4px;
-  border-radius: 12px;
-  gap: 4px;
+  flex-wrap: wrap;
+  background: #102a43;
+  padding: 6px;
+  border-radius: 14px;
+  gap: 6px;
+  box-shadow: 0 8px 20px rgba(16, 42, 67, 0.12);
 }
 
 .filter-tab {
-  border: none;
-  background: transparent;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.08);
   padding: 8px 16px;
   border-radius: 10px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #64748b;
+  color: #cbd5e1;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .filter-tab:hover {
-  color: #1e293b;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
 }
 
 .filter-tab-active {
-  background: #ffffff;
+  background: linear-gradient(135deg, #facc15, #fde68a);
   color: #102a43;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 12px rgba(250, 204, 21, 0.35);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.dashboard-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 6px;
+  background: #102a43;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(16, 42, 67, 0.14);
+}
+
+.dashboard-tab {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-tab:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.dashboard-tab-active {
+  background: linear-gradient(135deg, #facc15, #fde68a);
+  color: #102a43;
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(250, 204, 21, 0.35);
+}
+
+.dashboard-tab-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-tab-active .dashboard-tab-badge {
+  background: #102a43;
+  color: #fde68a;
 }
 
 .summary-strip {
@@ -140,7 +201,7 @@
   background: #ffffff;
   border: 1px solid #dbe7f3;
   border-radius: 22px;
-  padding: 18px 22px;
+  padding: 12px 15px;
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.06);
 }
 
@@ -416,6 +477,45 @@
   border: 1px solid #cbd5e1;
 }
 
+.action-button {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.action-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.1);
+}
+
+.action-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.action-button-edit {
+  background: #e0f2fe;
+  color: #075985;
+  border-color: #bae6fd;
+}
+
+.action-button-delete {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.action-button-delete:hover {
+  background: #fecaca;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -461,9 +561,30 @@
   color: #b45309;
 }
 
+.status-pill-stopped {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .status-pill-approved {
   background: #dcfce7;
   color: #166534;
+}
+
+.status-pill-infra-admin {
+  background: #ecfeff;
+  color: #0e7490;
+}
+
+.status-pill-infra-exec {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.software-card-cyan {
+  background: linear-gradient(135deg, #ecfeff, #cffafe);
+  color: #0e7490;
+  border: 1px solid #a5f3fc;
 }
 
 .status-pill-infrastructure-admin {

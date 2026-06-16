@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import "./App.css";
 
-import HRForm from "./HRForm";
 import Login from "./Login";
 import AdminDashboard from "./AdminDashboard";
+import HRDashboard from "./HRDashboard";
 
 // Components
 import AppNotice from "./components/AppNotice";
@@ -12,9 +12,10 @@ import SummaryStrip from "./components/SummaryStrip";
 import RequestTable from "./components/RequestTable";
 import RequestDetailPanel from "./components/RequestDetailPanel";
 import SoftwareSection from "./components/SoftwareSection";
+import DashboardTabBar from "./components/DashboardTabBar";
 
 // Constants & Utils
-import { pages, workflowStages, pageOptions } from "./constants";
+import { pages, workflowStages, pageOptions, globalQueueFilters, roleQueueFilters } from "./constants";
 import {
   normalizeRequestRecord,
   matchesSearch,
@@ -24,6 +25,14 @@ import {
   validateEmployeePhoneNumber,
   cleanNameInput,
   cleanNumericInput,
+  isGlobalQueueViewer,
+  isStaffWorkflowUser,
+  isHrUser,
+  isAdmin,
+  filterRequestsForUserScope,
+  applyQueueTabFilter,
+  countPendingForPage,
+  countPendingForUser,
 } from "./utils";
 import { api } from "./services/api";
 
@@ -65,7 +74,7 @@ function isWorkflowDashboardPage(page) {
 
 function ConfirmationModal({ config, onCancel }) {
   if (!config) return null;
-  const { title, message, confirmLabel, onConfirm, tone = "primary" } = config;
+  const { title, message, confirmLabel, onConfirm, tone = "primary", actions } = config;
 
   return (
     <div className="modal-backdrop">
@@ -79,16 +88,35 @@ function ConfirmationModal({ config, onCancel }) {
         <div style={{ padding: "24px" }}>
           <p style={{ marginBottom: "24px", color: "#475569", lineHeight: 1.5 }}>{message}</p>
           <div className="detail-actions">
-            <button 
-              type="button" 
-              className={tone === "danger" ? "warning-button" : "primary-button"} 
-              onClick={() => {
-                onConfirm();
-                onCancel();
-              }}
-            >
-              {confirmLabel || "Confirm"}
-            </button>
+            {Array.isArray(actions) && actions.length > 0 ? (
+              actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  className={action.tone === "danger" ? "warning-button" : "primary-button"}
+                  disabled={!!action.disabled}
+                  title={action.title || ""}
+                  onClick={() => {
+                    if (action.disabled) return;
+                    action.onConfirm?.();
+                    onCancel();
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))
+            ) : (
+              <button 
+                type="button" 
+                className={tone === "danger" ? "warning-button" : "primary-button"} 
+                onClick={() => {
+                  onConfirm();
+                  onCancel();
+                }}
+              >
+                {confirmLabel || "Confirm"}
+              </button>
+            )}
             <button type="button" className="secondary-button" onClick={onCancel}>
               Cancel
             </button>
@@ -289,19 +317,30 @@ function ProfileDashboard({ user, request, onUpdateProfile, onShowNotice }) {
             title="Pre-installed on company laptop"
             tone="blue"
             items={request.preInstalledSoftware}
+            emptyMessage="No company-provided software has been assigned for this department yet."
+            showWhenEmpty
           />
 
           <SoftwareSection
             title="To be installed by you"
             tone="yellow"
             items={request.employeeInstalledSoftware}
+            emptyMessage="No employee-installed software has been assigned for this department yet."
+            showWhenEmpty
           />
 
           <SoftwareSection
-            title="Special software approved by Manager"
+            title="Software listed by Manager"
             tone="orange"
             items={request.managerSoftware}
             headerLabel={request.formData.lineManager}
+          />
+
+          <SoftwareSection
+            title="Software listed by Infrastructure Admin"
+            tone="cyan"
+            items={request.infraSoftware}
+            headerLabel={request.infraAdmin?.name}
           />
         </section>
       )}
@@ -319,7 +358,7 @@ function App() {
     const storedSession = readStoredSession();
     const requestedPage = getRoutePage();
     if (storedSession?.user) {
-      return resolveAllowedPage(storedSession.user, requestedPage);
+      return resolveAllowedPage(storedSession.user, null, requestedPage, false);
     }
     return pages.login;
   });
@@ -334,20 +373,32 @@ function App() {
   });
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [requestHistoryFilter, setRequestHistoryFilter] = useState("wip"); // wip, stopped, approved
+  const [requestHistoryFilter, setRequestHistoryFilter] = useState("wip");
+  const [roleQueueFilter, setRoleQueueFilter] = useState("pending");
   const [selectedRequestId, setSelectedRequestId] = useState(null);
   const [editingHrRequestId, setEditingHrRequestId] = useState(null);
   const [notice, setNotice] = useState(null);
   const [confirmConfig, setConfirmConfig] = useState(null);
   const auditSectionRef = useRef(null);
 
+  const currentUserRequest = useMemo(() => {
+    const currentEmail = (currentUser?.email || "").trim().toLowerCase();
+    if (!currentEmail) return null;
+
+    return requests.find((request) => {
+      const personalEmail = (request.formData?.personalEmail || "").trim().toLowerCase();
+      const officialEmail = (request.officialEmail || "").trim().toLowerCase();
+      return personalEmail === currentEmail || officialEmail === currentEmail;
+    }) || null;
+  }, [requests, currentUser]);
+
   const fetchUsersData = async () => {
     const { ok, data } = await api.fetchUsers();
     return ok && data && Array.isArray(data.users) ? data.users : [];
   };
 
-  const fetchWorkflowOptionsData = async () => {
-    const { ok, data } = await api.fetchWorkflowOptions();
+  const fetchWorkflowOptionsData = async (department) => {
+    const { ok, data } = await api.fetchWorkflowOptions(department);
     if (ok && data) {
       return {
         officialEmailDomain: typeof data.officialEmailDomain === 'string' ? data.officialEmailDomain : '',
@@ -358,16 +409,26 @@ function App() {
     return { officialEmailDomain: '', preInstalledSoftware: [], employeeInstalledSoftware: [] };
   };
 
-  function getAllowedPagesForUser(user) {
+  function getAllowedPagesForUser(user, userRequest, requestsReady = true) {
     if (!user) return [pages.login];
-    const role = normalizeRole(user.role);
-    const isHrDept = user.department?.trim().toUpperCase() === "HR";
     
+    // Check if user's own onboarding is complete
+    const isApproved = userRequest?.stage === workflowStages.approved;
+    const isHrDept = user.department?.trim().toUpperCase() === "HR";
+    const role = normalizeRole(user.role);
+    const hasUserRequest = requestsReady ? Boolean(userRequest) : true;
+
+    // Hard Gatekeeping: employees with incomplete onboarding stay on status page
+    const isStaff = isStaffWorkflowUser(user);
+    if (userRequest && !isApproved && !isStaff) {
+      return [pages.status, myProfileKey];
+    }
+
     let allowed = [];
     
     // 1. Determine Landing Page (First in array)
     if (isHrDept) {
-      allowed.push(pages.submit); // HR lands on the Form
+      allowed.push(pages.submit);
     } else if (role === "Admin") {
       allowed.push(pages.admin);
     } else if (role === "Manager") {
@@ -378,8 +439,10 @@ function App() {
       allowed.push(pages.infraAdmin);
     } else if (role === "Infrastructure Executive") {
       allowed.push(pages.infraExecutive);
+    } else if (hasUserRequest) {
+      allowed.push(pages.status);
     } else {
-      allowed.push(pages.status); // Default for General Employee
+      allowed.push(myProfileKey);
     }
 
     // 2. Add other accessible pages
@@ -393,27 +456,25 @@ function App() {
       if (!allowed.includes(pages.requests)) allowed.push(pages.requests);
     }
     
-    // HR role members can see the HR dashboard regardless of department? 
-    // Usually HR role = HR Dept, but let's be safe.
     if (role === "HR" || isHrDept) {
       if (!allowed.includes(pages.hr)) allowed.push(pages.hr);
       if (!allowed.includes(pages.submit)) allowed.push(pages.submit);
     }
 
-    if (!allowed.includes(pages.status)) allowed.push(pages.status);
+    if (hasUserRequest && !allowed.includes(pages.status)) allowed.push(pages.status);
     if (!allowed.includes(myProfileKey)) allowed.push(myProfileKey);
 
     return allowed;
   }
 
-  function resolveAllowedPage(user, requestedPage) {
-    const allowed = getAllowedPagesForUser(user);
+  function resolveAllowedPage(user, userRequest, requestedPage, requestsReady = true) {
+    const allowed = getAllowedPagesForUser(user, userRequest, requestsReady);
     if (requestedPage && allowed.includes(requestedPage)) return requestedPage;
     return allowed[0] || pages.login;
   }
 
   useEffect(() => {
-    const allowed = getAllowedPagesForUser(currentUser);
+    const allowed = getAllowedPagesForUser(currentUser, currentUserRequest, requestsLoaded);
     if (!allowed.includes(currentPage)) {
       const targetPage = allowed[0] || pages.login;
       if (currentPage !== targetPage) {
@@ -422,11 +483,11 @@ function App() {
       }
     }
     setRoutePage(currentPage);
-  }, [currentPage, isAuthenticated, currentUser]);
+  }, [currentPage, isAuthenticated, currentUser, currentUserRequest, requestsLoaded]);
 
   useEffect(() => {
     const initData = async () => {
-      const options = await fetchWorkflowOptionsData();
+      const options = await fetchWorkflowOptionsData(currentUser?.department);
       setWorkflowOptions(options);
       if (isAuthenticated) {
         setAllUsers(await fetchUsersData());
@@ -434,7 +495,7 @@ function App() {
       }
     };
     initData();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, currentUser?.department]);
 
   const showNotice = (type, title, message) => {
     setNotice({ type, title, message });
@@ -466,7 +527,9 @@ function App() {
       setIsAuthenticated(true);
       setCurrentUser(normalizedUser);
       writeStoredSession({ user: normalizedUser });
-      setCurrentPage(resolveAllowedPage(normalizedUser, null));
+      
+      // We don't have requests yet for the new user, so keep request-based tabs available until data loads
+      setCurrentPage(resolveAllowedPage(normalizedUser, null, null, false));
       showNotice("success", "Welcome Back", `Logged in as ${normalizedUser.name}`);
     } else {
       showNotice("error", "Login Failed", data.message || "Invalid email or password.");
@@ -474,7 +537,7 @@ function App() {
   };
 
   const handleAddUser = async (user) => {
-    const { ok, data } = await api.createUser(user);
+    const { ok, data } = await api.createUser(user, currentUser?.id);
     if (ok) {
       showNotice("success", "User Created", "New portal user has been registered successfully.");
       setAllUsers(await fetchUsersData());
@@ -486,7 +549,7 @@ function App() {
   };
 
   const handleUpdateUser = async (user) => {
-    const { ok, data } = await api.updateUser(user);
+    const { ok, data } = await api.updateUser(user, currentUser?.id);
     if (ok) {
       showNotice("success", "User Updated", "User details and permissions updated.");
       setAllUsers(await fetchUsersData());
@@ -496,7 +559,7 @@ function App() {
   };
 
   const handleDeleteUser = async (email) => {
-    const { ok, data } = await api.deleteUser(email);
+    const { ok, data } = await api.deleteUser(email, currentUser?.id);
     if (ok) {
       showNotice("success", "User Deleted", data.message);
       setAllUsers(await fetchUsersData());
@@ -516,52 +579,76 @@ function App() {
 
   const getBadgeCount = (key) => {
     if (!userFilteredRequests.length || !currentUser) return 0;
-    const role = normalizeRole(currentUser.role);
-    const isHrDept = currentUser.department?.trim().toUpperCase() === "HR";
-    
+
     if (key === pages.manager) {
-      return userFilteredRequests.filter(r => r.stage === workflowStages.manager).length;
+      return countPendingForPage(userFilteredRequests, pages.manager, pages);
     }
     if (key === pages.hod) {
-      return userFilteredRequests.filter(r => r.stage === workflowStages.hod).length;
+      return countPendingForPage(userFilteredRequests, pages.hod, pages);
     }
     if (key === pages.infraAdmin) {
-      return userFilteredRequests.filter(r => r.stage === workflowStages.infraAdmin).length;
+      return countPendingForPage(userFilteredRequests, pages.infraAdmin, pages);
     }
     if (key === pages.infraExecutive) {
-      return userFilteredRequests.filter(r => r.stage === workflowStages.infraExecutive).length;
+      return countPendingForPage(userFilteredRequests, pages.infraExecutive, pages);
     }
     if (key === pages.hr) {
-      return userFilteredRequests.filter(r => r.stage === workflowStages.hr).length;
+      return countPendingForPage(userFilteredRequests, pages.hr, pages);
     }
     if (key === pages.requests) {
-      // For the history/global tab, only show a badge for what the user can ACT on
-      if (role === "Manager") {
-        return userFilteredRequests.filter(r => r.stage === workflowStages.manager).length;
-      }
-      if (role === "HOD") {
-        return userFilteredRequests.filter(r => r.stage === workflowStages.hod).length;
-      }
-      if (role === "Infrastructure Admin") {
-        return userFilteredRequests.filter(r => r.stage === workflowStages.infraAdmin).length;
-      }
-      if (role === "Infrastructure Executive") {
-        return userFilteredRequests.filter(r => r.stage === workflowStages.infraExecutive).length;
-      }
-      if (role === "HR" || isHrDept) {
-        return userFilteredRequests.filter(r => r.stage === workflowStages.hr).length;
-      }
+      return countPendingForUser(userFilteredRequests, currentUser, pages);
     }
     return 0;
   };
 
+  const getQueueTitle = () => {
+    if (currentPage === pages.admin) return "Global Workflow Queue";
+    if (currentPage === pages.requests) {
+      return isGlobalQueueViewer(currentUser) ? "All Requests" : "My Request Queue";
+    }
+    const labels = {
+      [pages.manager]: "Line Manager Queue",
+      [pages.hod]: "HOD Queue",
+      [pages.hr]: "HR Review Queue",
+      [pages.infraAdmin]: "Infrastructure Admin Queue",
+      [pages.infraExecutive]: "Infrastructure Executive Queue",
+    };
+    return labels[currentPage] || "Your Active Queue";
+  };
+
+  const getQueueSubtitle = () => {
+    if (isGlobalQueueViewer(currentUser) && [pages.admin, pages.requests, pages.hr].includes(currentPage)) {
+      return "Full visibility across every onboarding request in the system.";
+    }
+    if (currentPage === pages.requests) {
+      return "Requests assigned to you and cases you have completed.";
+    }
+    return "Switch tabs to review pending items or completed cases.";
+  };
+
+  const handlePageChange = (pageKey) => {
+    setCurrentPage(pageKey);
+    setSearchTerm("");
+    setSelectedRequestId(null);
+    setRoleQueueFilter("pending");
+  };
+
+  const enhancedSaveRequest = async (payload, defaultActionType = "Update") => {
+    return await api.saveRequest({
+      ...payload,
+      actorId: currentUser?.id,
+      actionType: payload.actionType || defaultActionType
+    });
+  };
+
   const handleOnboardingSubmit = async (formData) => {
     if (editingHrRequestId) {
-      const { ok, data } = await api.saveRequest({ 
+      const { ok, data } = await enhancedSaveRequest({ 
         id: editingHrRequestId, 
         stage: workflowStages.manager, 
         officialEmail: `${formData.officialEmailUser}${workflowOptions.officialEmailDomain || ""}`,
-        formData 
+        formData,
+        actionType: "HR Edit/Resubmit"
       });
       if (ok) {
         showNotice("success", "Update Successful", "The onboarding request has been updated and sent to Manager.");
@@ -573,7 +660,7 @@ function App() {
         return { ok: false, message: data.message, errors: data.errors };
       }
     } else {
-      const { ok, data } = await api.sendOnboardingMail(formData);
+      const { ok, data } = await api.sendOnboardingMail(formData, currentUser?.id);
       if (ok) {
         showNotice("success", "Submission Successful", "The onboarding request has been initiated.");
         await handleRefreshRequests();
@@ -598,26 +685,102 @@ function App() {
       payload.infraAdminId = currentUser.id;
     }
 
-    const { ok, data } = await api.saveRequest(payload);
+    const saveActionTypes = {
+      [pages.manager]: "Manager Update",
+      [pages.hod]: "HOD Update",
+      [pages.infraAdmin]: "Infra Admin Update",
+      [pages.infraExecutive]: "Infra Exec Update",
+      [pages.admin]: "Admin Override",
+    };
+
+    const { ok, data } = await enhancedSaveRequest(payload, saveActionTypes[role] || "Update");
     if (ok) {
       showNotice("success", "Saved", "Details saved successfully.");
       await handleRefreshRequests();
     } else {
-      showNotice("error", "Error", data.message || "Failed to save details.");
+      showNotice("error", "Error", data.message || "Failed to save details. Check for invalid or gibberish text.");
     }
   };
 
-  const userFilteredRequests = useMemo(() => {
-    if (!currentUser) return [];
-    const isHrDept = currentUser.department?.trim().toUpperCase() === "HR";
-    const role = normalizeRole(currentUser.role);
-    if (isHrDept || role === "Admin") return requests;
-    if (role === "Infrastructure Admin") return requests.filter(r => r.stage === workflowStages.infraAdmin || r.stage === workflowStages.infraExecutive || r.stage === workflowStages.approved);
-    if (role === "Manager") return requests.filter(r => r.formData.lineManager === currentUser.name);
-    if (role === "HOD") return requests.filter(r => r.formData.hod === currentUser.name);
-    if (role === "Infrastructure Executive") return requests.filter(r => r.infraExecutive?.id === currentUser.id);
-    return [];
-  }, [requests, currentUser]);
+  const userFilteredRequests = useMemo(
+    () => filterRequestsForUserScope(requests, currentUser),
+    [requests, currentUser],
+  );
+
+  const queueTabConfig = useMemo(() => {
+    if (!currentUser || !isWorkflowDashboardPage(currentPage)) {
+      return { tabs: [], activeTab: null, onTabChange: () => {} };
+    }
+
+    const globalViewer = isGlobalQueueViewer(currentUser);
+    const usesGlobalTabs = globalViewer && (currentPage === pages.admin || currentPage === pages.requests || currentPage === pages.hr);
+
+    if (usesGlobalTabs) {
+      const wipCount = userFilteredRequests.filter((r) =>
+        [workflowStages.manager, workflowStages.hod, workflowStages.hr, workflowStages.infraAdmin, workflowStages.infraExecutive].includes(r.stage),
+      ).length;
+      const hrCount = userFilteredRequests.filter((r) => r.stage === workflowStages.hr).length;
+
+      return {
+        tabs: globalQueueFilters.map((tab) => ({
+          ...tab,
+          badge: tab.key === "wip" ? wipCount : tab.key === "hr_review" ? hrCount : 0,
+        })),
+        activeTab: requestHistoryFilter,
+        onTabChange: setRequestHistoryFilter,
+      };
+    }
+
+    const rolePages = [pages.manager, pages.hod, pages.hr, pages.infraAdmin, pages.infraExecutive, pages.requests];
+    if (rolePages.includes(currentPage)) {
+      const pendingCount = [pages.manager, pages.hod, pages.hr, pages.infraAdmin, pages.infraExecutive].includes(currentPage)
+        ? countPendingForPage(userFilteredRequests, currentPage, pages)
+        : countPendingForUser(userFilteredRequests, currentUser, pages);
+
+      return {
+        tabs: roleQueueFilters.map((tab) => ({
+          ...tab,
+          badge: tab.key === "pending" ? pendingCount : 0,
+        })),
+        activeTab: roleQueueFilter,
+        onTabChange: setRoleQueueFilter,
+      };
+    }
+
+    return { tabs: [], activeTab: null, onTabChange: () => {} };
+  }, [currentUser, currentPage, userFilteredRequests, requestHistoryFilter, roleQueueFilter]);
+
+  const visibleRequests = useMemo(() => {
+    const globalViewer = isGlobalQueueViewer(currentUser);
+    let filterKey = null;
+
+    if (isWorkflowDashboardPage(currentPage)) {
+      if (globalViewer && (currentPage === pages.admin || currentPage === pages.requests || currentPage === pages.hr)) {
+        filterKey = requestHistoryFilter;
+      } else if ([pages.manager, pages.hod, pages.hr, pages.infraAdmin, pages.infraExecutive, pages.requests].includes(currentPage)) {
+        filterKey = roleQueueFilter;
+      }
+    }
+
+    let filtered = userFilteredRequests;
+    if (filterKey) {
+      filtered = applyQueueTabFilter(filtered, filterKey, {
+        user: currentUser,
+        currentPage,
+        pagesMap: pages,
+      });
+    }
+
+    return filtered.filter((r) => matchesSearch(r, searchTerm)).sort((a, b) => b.id - a.id);
+  }, [userFilteredRequests, currentPage, searchTerm, requestHistoryFilter, roleQueueFilter, currentUser]);
+
+  useEffect(() => {
+    if (!selectedRequestId) return;
+    const selectedVisible = visibleRequests.some((request) => request.id === selectedRequestId);
+    if (!selectedVisible) {
+      setSelectedRequestId(null);
+    }
+  }, [selectedRequestId, visibleRequests]);
 
   const handleSelectRequest = (id) => {
     setSelectedRequestId(id);
@@ -628,34 +791,7 @@ function App() {
     }
   };
 
-  const visibleRequests = useMemo(() => {
-    let filtered = userFilteredRequests;
-    if (currentPage === pages.manager) {
-      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.manager);
-    } else if (currentPage === pages.hod) {
-      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hod);
-    } else if (currentPage === pages.hr) {
-      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hr);
-    } else if (currentPage === pages.infraAdmin) {
-      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.infraAdmin);
-    } else if (currentPage === pages.infraExecutive) {
-      filtered = userFilteredRequests.filter(r => r.stage === workflowStages.infraExecutive);
-    } else if (currentPage === pages.requests || currentPage === pages.admin) {
-      if (requestHistoryFilter === "wip") {
-        filtered = userFilteredRequests.filter(r => [workflowStages.manager, workflowStages.hod, workflowStages.hr, workflowStages.infraAdmin, workflowStages.infraExecutive].includes(r.stage));
-      } else if (requestHistoryFilter === "hr_review") {
-        filtered = userFilteredRequests.filter(r => r.stage === workflowStages.hr);
-      } else if (requestHistoryFilter === "stopped") {
-        filtered = userFilteredRequests.filter(r => r.stage === workflowStages.stopped);
-      } else if (requestHistoryFilter === "approved") {
-        filtered = userFilteredRequests.filter(r => r.stage === workflowStages.approved);
-      }
-    }
-    return filtered.filter(r => matchesSearch(r, searchTerm)).sort((a, b) => b.id - a.id);
-  }, [userFilteredRequests, currentPage, searchTerm, requestHistoryFilter]);
-
   const selectedRequest = useMemo(() => requests.find(r => r.id === selectedRequestId) || null, [requests, selectedRequestId]);
-  const currentUserRequest = useMemo(() => requests.find(r => r.formData.personalEmail === currentUser?.email) || null, [requests, currentUser]);
 
   return (
     <div className="app-shell">
@@ -667,14 +803,14 @@ function App() {
         </div>
         {isAuthenticated && (
           <nav className="app-nav">
-            {pageOptions
-              .filter((opt) => getAllowedPagesForUser(currentUser).includes(opt.key))
+              {pageOptions
+              .filter((opt) => getAllowedPagesForUser(currentUser, currentUserRequest, requestsLoaded).includes(opt.key))
               .map((pageOption) => (
                 <button
                   key={pageOption.key}
                   type="button"
                   className={currentPage === pageOption.key ? "nav-pill nav-pill-active" : "nav-pill"}
-                  onClick={() => { setCurrentPage(pageOption.key); setSearchTerm(""); setSelectedRequestId(null); }}
+                  onClick={() => handlePageChange(pageOption.key)}
                 >
                   {pageOption.label}
                   {getBadgeCount(pageOption.key) > 0 && (
@@ -688,7 +824,7 @@ function App() {
       </header>
 
       <main className="app-main">
-        {isAuthenticated && ![pages.submit, myProfileKey].includes(currentPage) && (normalizeRole(currentUser?.role) === "HR" || currentUser?.department?.trim().toUpperCase() === "HR") && <SummaryStrip requests={userFilteredRequests} />}
+        {isAuthenticated && ![pages.submit, myProfileKey].includes(currentPage) && (isHrUser(currentUser) || isAdmin(currentUser)) && <SummaryStrip requests={userFilteredRequests} />}
         <AppNotice notice={notice} onClear={() => setNotice(null)} />
 
         <PageErrorBoundary key={currentPage}>
@@ -712,16 +848,25 @@ function App() {
 
               {currentPage === pages.admin && (
                 <>
-                  <AdminDashboard 
-                    users={allUsers} 
-                    onAddUser={handleAddUser} 
+                  <AdminDashboard
+                    users={allUsers}
+                    currentUser={currentUser}
+                    onAddUser={handleAddUser}
                     onUpdateUser={handleUpdateUser} 
                     onDeleteUser={handleDeleteUser}
                     onShowConfirm={setConfirmConfig}
                     onShowNotice={showNotice}
                     apiBaseUrl={api.getBaseUrl()} 
                   />
-                  <div ref={auditSectionRef} className="dashboard-layout" style={{ marginTop: 40 }}>
+                  <div ref={auditSectionRef}>
+                    {queueTabConfig.tabs.length > 0 ? (
+                      <DashboardTabBar
+                        tabs={queueTabConfig.tabs}
+                        activeTab={queueTabConfig.activeTab}
+                        onTabChange={queueTabConfig.onTabChange}
+                      />
+                    ) : null}
+                    <div className="dashboard-layout" style={{ marginTop: queueTabConfig.tabs.length ? 0 : 40 }}>
                     <RequestDetailPanel
                       key={`${selectedRequest?.id}-${selectedRequest?.revisionCount}`}
                       request={selectedRequest}
@@ -741,14 +886,14 @@ function App() {
                       }}
                       onDeleteRequest={(id) => {
                         setConfirmConfig({
-                          title: "Delete Permanently?",
-                          message: "This will permanently remove the onboarding request AND the employee's user account (including asset codes, codes etc) from the database. This action cannot be undone.",
-                          confirmLabel: "Delete Permanently",
+                          title: "Delete Stopped Request?",
+                          message: "This will permanently remove the stopped onboarding request. The linked user account must already be deleted separately.",
+                          confirmLabel: "Delete Request",
                           tone: "danger",
                           onConfirm: async () => {
-                            const { ok, data } = await api.deleteRequest(id);
+                            const { ok, data } = await api.deleteRequest(id, currentUser?.id);
                             if (ok) {
-                              showNotice("success", "Deleted", "Request and associated user account removed permanently.");
+                              showNotice("success", "Deleted", data.message || "Stopped request removed permanently.");
                               handleRefreshRequests();
                               setAllUsers(await fetchUsersData());
                               setSelectedRequestId(null);
@@ -760,27 +905,86 @@ function App() {
                       }}
                     />
                     <RequestTable 
-                      title="Global Audit" 
-                      subtitle="Full visibility and administrative control" 
+                      title={getQueueTitle()} 
+                      subtitle={getQueueSubtitle()} 
                       searchTerm={searchTerm} 
                       onSearchChange={setSearchTerm} 
-                      filterValue={requestHistoryFilter}
-                      filterOptions={[
-                        { key: "wip", label: "WIP (Current)" },
-                        { key: "hr_review", label: "HR Review" },
-                        { key: "stopped", label: "Stopped" },
-                        { key: "approved", label: "Approved" },
-                      ]}
-                      onFilterChange={setRequestHistoryFilter}
                       requests={visibleRequests} 
                       selectedRequestId={selectedRequestId} 
                       onSelectRequest={handleSelectRequest} 
                     />
+                    </div>
                   </div>
                 </>
               )}
 
-              {isWorkflowDashboardPage(currentPage) && currentPage !== pages.admin && (
+              {(currentPage === pages.hr || currentPage === pages.submit) && (
+                <HRDashboard
+                  requests={requests}
+                  currentUser={currentUser}
+                  allUsers={allUsers}
+                  workflowOptions={workflowOptions}
+                  selectedRequestId={selectedRequestId}
+                  onSelectRequest={handleSelectRequest}
+                  onShowNotice={showNotice}
+                  onSubmitForm={handleOnboardingSubmit}
+                  onApprove={async (id) => {
+                    const { ok, data } = await api.finalizeOnboarding({
+                      requestCode: requests.find(r => r.id === id)?.requestCode,
+                      name: requests.find(r => r.id === id)?.formData?.name,
+                      email: requests.find(r => r.id === id)?.officialEmail,
+                      department: requests.find(r => r.id === id)?.formData?.department,
+                      employeeCode: requests.find(r => r.id === id)?.employeeCode || "",
+                      actorId: currentUser?.id,
+                      actionType: "HR Final Approval"
+                    });
+                    if (ok) {
+                      showNotice("success", "Finalized", "Request approved and finalized by HR.");
+                      setSelectedRequestId(null);
+                      handleRefreshRequests();
+                      setAllUsers(await fetchUsersData());
+                    } else {
+                      showNotice("error", "Error", data.message || "Failed to finalize request.");
+                    }
+                  }}
+                  onSendToHr={async (id, actor, reason) => {
+                    const { ok, data } = await enhancedSaveRequest({ id, stage: workflowStages.hr, reviewRequestedBy: actor, reviewReason: reason }, "Sent to HR Review");
+                    if (ok) { showNotice("warning", "Sent to HR", "Request sent back for HR review."); setSelectedRequestId(null); handleRefreshRequests(); }
+                    else { showNotice("error", "Error", data?.message || "Failed to send to HR."); }
+                  }}
+                  onStopCase={async (id, reason) => {
+                    const { ok, data } = await enhancedSaveRequest({ id, stage: workflowStages.stopped, stopReason: reason }, "Stopped Case");
+                    if (ok) { showNotice("error", "Stopped", "Onboarding case has been stopped."); setSelectedRequestId(null); handleRefreshRequests(); }
+                    else { showNotice("error", "Error", data?.message || "Failed to stop case."); }
+                  }}
+                  onSaveSoftware={handleSaveSoftware}
+                  onStartHrEdit={(id) => {
+                    setEditingHrRequestId(id);
+                    setCurrentPage(pages.submit);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  editingHrRequestId={editingHrRequestId}
+                  setEditingHrRequestId={setEditingHrRequestId}
+                  onRefreshRequests={handleRefreshRequests}
+                  onFetchUsersData={fetchUsersData}
+                  queueTabConfig={queueTabConfig}
+                  visibleRequests={visibleRequests}
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  getQueueTitle={getQueueTitle}
+                  getQueueSubtitle={getQueueSubtitle}
+                />
+              )}
+
+              {isWorkflowDashboardPage(currentPage) && currentPage !== pages.admin && currentPage !== pages.hr && (
+                <>
+                  {queueTabConfig.tabs.length > 0 ? (
+                    <DashboardTabBar
+                      tabs={queueTabConfig.tabs}
+                      activeTab={queueTabConfig.activeTab}
+                      onTabChange={queueTabConfig.onTabChange}
+                    />
+                  ) : null}
                 <div className="dashboard-layout">
                     <RequestDetailPanel 
                       key={`${selectedRequest?.id}-${selectedRequest?.revisionCount}`}
@@ -797,19 +1001,19 @@ function App() {
                       }}
                       onApprove={async (id) => {
                         if (currentPage === pages.manager) {
-                          const { ok, data } = await api.saveRequest({ id, stage: workflowStages.hod });
+                          const { ok, data } = await enhancedSaveRequest({ id, stage: workflowStages.hod }, "Approve to HOD");
                           if (ok) { showNotice("success", "Approved", "Request forwarded to HOD."); setSelectedRequestId(null); handleRefreshRequests(); }
                           else { showNotice("error", "Error", data.message || "Failed to approve request."); }
                         } else if (currentPage === pages.hod) {
-                          const { ok, data } = await api.saveRequest({ id, stage: workflowStages.infraAdmin });
+                          const { ok, data } = await enhancedSaveRequest({ id, stage: workflowStages.infraAdmin }, "Approve to Infra Admin");
                           if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Admin."); setSelectedRequestId(null); handleRefreshRequests(); }
                           else { showNotice("error", "Error", data.message || "Failed to approve request."); }
                         } else if (currentPage === pages.infraAdmin) {
-                          const { ok, data } = await api.saveRequest({ 
+                          const { ok, data } = await enhancedSaveRequest({ 
                             id, 
                             stage: workflowStages.infraExecutive,
                             infraAdminId: currentUser?.id 
-                          });
+                          }, "Approve to Infra Exec");
                           if (ok) { showNotice("success", "Approved", "Request forwarded to Infrastructure Executive."); setSelectedRequestId(null); handleRefreshRequests(); }
                           else { showNotice("error", "Error", data.message || "Failed to approve request."); }
                         } else if (currentPage === pages.infraExecutive) {
@@ -824,62 +1028,53 @@ function App() {
                             return;
                           }
 
-                          // 1. Save stage as approved
-                          const { ok: saveOk, data: saveData } = await api.saveRequest({ id, stage: workflowStages.approved });
-                          if (!saveOk) {
-                            showNotice("error", "Error", saveData.message || "Failed to save request stage.");
-                            return;
-                          }
-
-                          // 2. Finalize and create user
+                          // Finalize and create user (This API call also marks the request as 'approved' in the DB)
+                          // Also track it in the changelog via a separate call if needed, but finalizeOnboarding can do it.
+                          // Wait, api.finalizeOnboarding doesn't take actorId. Let's send actorId anyway.
                           const { ok, data } = await api.finalizeOnboarding({
                             requestCode: requestCode,
                             name: name,
                             email: officialEmail,
                             department: department,
+                            employeeCode: requestToFinalize.employeeCode || "",
+                            actorId: currentUser?.id,
+                            actionType: "Final Approval"
                           });
 
                           if (ok) { 
-                            const successMsg = `Onboarding finalized for ${name}. Employee Code: ${data.employeeCode || "assigned"}. A welcome email has been sent to ${officialEmail} with account credentials and hardware details.`;
+                            const successMsg = `Onboarding finalized for ${name}. Employee Code: ${data.employeeCode || "assigned"}. A welcome email has been sent to the personal and official accounts.`;
                             showNotice("success", "Onboarding Complete", successMsg); 
                             setSelectedRequestId(null);
                             handleRefreshRequests(); 
                             setAllUsers(await fetchUsersData()); 
                           } else {
-                            showNotice("error", "Error Finalizing", data.message || "Request approved but failed to create user account.");
+                            showNotice("error", "Error Finalizing", data.message || "Final approval failed. Please verify the details and try again.");
                             handleRefreshRequests();
                           }
                         }
                       }}
                       onSendToHr={async (id, actor, reason) => {
-                        const { ok, data } = await api.saveRequest({ id, stage: workflowStages.hr, reviewRequestedBy: actor, reviewReason: reason });
+                        const { ok, data } = await enhancedSaveRequest({ id, stage: workflowStages.hr, reviewRequestedBy: actor, reviewReason: reason }, "Sent to HR Review");
                         if (ok) { showNotice("warning", "Sent to HR", "Request sent back for HR review."); setSelectedRequestId(null); handleRefreshRequests(); }
                         else { showNotice("error", "Error", data?.message || "Failed to send to HR."); }
                       }}
                       onStopCase={async (id, reason) => {
-                        const { ok, data } = await api.saveRequest({ id, stage: workflowStages.stopped, stopReason: reason });
+                        const { ok, data } = await enhancedSaveRequest({ id, stage: workflowStages.stopped, stopReason: reason }, "Stopped Case");
                         if (ok) { showNotice("error", "Stopped", "Onboarding case has been stopped."); setSelectedRequestId(null); handleRefreshRequests(); }
                         else { showNotice("error", "Error", data?.message || "Failed to stop case."); }
                       }}
                     />
                     <RequestTable 
-                      title={currentPage === pages.requests ? "All Requests" : "Your Active Queue"} 
-                      subtitle={currentPage === pages.requests ? "View and search through your complete workflow history." : "Requests requiring your attention"} 
+                      title={getQueueTitle()} 
+                      subtitle={getQueueSubtitle()} 
                       searchTerm={searchTerm} 
                       onSearchChange={setSearchTerm} 
-                      filterValue={currentPage === pages.requests ? requestHistoryFilter : null}
-                      filterOptions={currentPage === pages.requests ? [
-                        { key: "wip", label: "WIP (Current)" },
-                        { key: "hr_review", label: "HR Review" },
-                        { key: "stopped", label: "Stopped" },
-                        { key: "approved", label: "Approved" },
-                      ] : null}
-                      onFilterChange={setRequestHistoryFilter}
                       requests={visibleRequests} 
                       selectedRequestId={selectedRequestId} 
                       onSelectRequest={handleSelectRequest} 
                     />
                 </div>
+                </>
               )}
 
               {currentPage === pages.status && (
@@ -895,8 +1090,9 @@ function App() {
                     if (!currentUserRequest) return <div className="request-empty">No onboarding record found for your email.</div>;
                     return (
                       <div className="dashboard-layout">
-                        <RequestDetailPanel 
-                          request={currentUserRequest} 
+                        <RequestDetailPanel
+                          key={`${currentUserRequest?.id}-${currentUserRequest?.revisionCount || 0}`}
+                          request={currentUserRequest}
                           role={pages.status} 
                           onShowNotice={showNotice} 
                           onAcknowledgeLaptop={async (id) => {
@@ -912,26 +1108,6 @@ function App() {
                       </div>
                     );
                   })()}
-                </section>
-              )}
-              
-              {currentPage === pages.submit && (
-                <section className="dashboard-panel">
-                  <div className="dashboard-head">
-                    <div>
-                      <h2>{editingHrRequestId ? "Edit Onboarding Request" : "Submit New Onboarding"}</h2>
-                      <p>{editingHrRequestId ? "Update details and re-submit to Manager" : "Initiate a new onboarding request for a team member"}</p>
-                    </div>
-                  </div>
-                  <HRForm 
-                    key={editingHrRequestId || "new-onboarding"}
-                    apiBaseUrl={api.getBaseUrl()} 
-                    onShowNotice={showNotice} 
-                    officialEmailDomain={workflowOptions.officialEmailDomain}
-                    onSubmitForm={handleOnboardingSubmit}
-                    initialData={editingHrRequestId ? requests.find(r => r.id === editingHrRequestId)?.formData : null}
-                    onCancel={editingHrRequestId ? () => { setEditingHrRequestId(null); setCurrentPage(pages.hr); } : null}
-                  />
                 </section>
               )}
             </>

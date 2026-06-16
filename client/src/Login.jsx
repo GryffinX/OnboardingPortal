@@ -7,6 +7,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [view, setView] = useState("login"); // login, forgot, otp, reset
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -67,6 +68,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
     try {
       const result = await onVerifyOtp(email, otp);
       if (result.ok) {
+        setResetToken(result.data?.resetToken || "");
         setView("reset");
         showMessage("OTP verified. Please set your new password.", "success");
       } else {
@@ -92,13 +94,14 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
     setLoading(true);
     setMessage(null);
     try {
-      const result = await onResetPassword(email, otp, password);
-      if (result) {
+      const result = await onResetPassword(email, otp, password, resetToken);
+      if (result.ok) {
         setView("login");
         setEmail("");
         setOtp("");
         setPassword("");
         setConfirmPassword("");
+        setResetToken("");
         showMessage("Password reset successfully. You can now login.", "success");
       } else {
         showMessage(result.message || "Failed to reset password.");
@@ -200,6 +203,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
                 onClick={() => {
                   setView("login");
                   setMessage(null);
+                  setResetToken("");
                 }}
               >
                 Back to Login
@@ -229,11 +233,12 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
                 type="button"
                 className="text-button"
                 onClick={() => {
-                  setView("forgot");
-                  setMessage(null);
-                }}
-              >
-                Resend OTP
+                setView("forgot");
+                setMessage(null);
+                setResetToken("");
+              }}
+            >
+              Resend OTP
               </button>
             </div>
           </form>

@@ -16,8 +16,8 @@ function getInitialSoftwareDraft(request, role) {
     return request?.managerSoftware?.join(", ") || "";
   }
 
-  if (role === pages.hod) {
-    return request?.hodSoftware?.join(", ") || "";
+  if (role === pages.hod || role === pages.infraAdmin) {
+    return request?.infraSoftware?.join(", ") || "";
   }
 
   return "";
@@ -50,9 +50,28 @@ function RequestDetailPanel({
   const [laptopStorageDraft, setLaptopStorageDraft] = useState(() => request?.laptopStorage || "");
   const [laptopProcessorDraft, setLaptopProcessorDraft] = useState(() => request?.laptopProcessor || "");
   const [laptopGpuDraft, setLaptopGpuDraft] = useState(() => request?.laptopGpu || "");
+  const [laptopReceiptConfirmed, setLaptopReceiptConfirmed] = useState(false);
 
   const [adminEmpCodeDraft, setAdminEmpCodeDraft] = useState(() => request?.employeeCode || "");
-  const [adminAssetCodeDraft, setAdminAssetCodeDraft] = useState(() => request?.assetCode || "");
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSoftwareDraft(getInitialSoftwareDraft(request, role));
+    setAssetCodeDraft(request?.assetCode || "");
+    setHodCommentDraft(request?.hodComment || "");
+    setDateOfJoiningDraft(request?.dateOfJoining || "");
+    setInfraAdminCommentDraft(request?.infraAdminComment || "");
+    setInfraAdminDraft(request?.infraAdmin?.id || "");
+    setInfraExecutiveDraft(request?.infraExecutive?.id || "");
+    setLaptopModelDraft(request?.laptopModel || "");
+    setLaptopRamDraft(request?.laptopRam || "");
+    setLaptopStorageDraft(request?.laptopStorage || "");
+    setLaptopProcessorDraft(request?.laptopProcessor || "");
+    setLaptopGpuDraft(request?.laptopGpu || "");
+    setLaptopReceiptConfirmed(false);
+    setAdminEmpCodeDraft(request?.employeeCode || "");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [request, role]);
 
   const [assetInventory, setAssetInventory] = useState([]);
   const [assetSearch, setAssetSearch] = useState("");
@@ -61,7 +80,7 @@ function RequestDetailPanel({
   const [newInventoryAsset, setNewInventoryAsset] = useState({ assetCode: '', laptopModel: '', laptopProcessor: '', laptopRam: '', laptopStorage: '', laptopGpu: '' });
 
   useEffect(() => {
-    if (role === pages.infraExecutive) {
+    if (role === pages.infraExecutive || role === pages.admin) {
       const loadAssets = async () => {
         const { ok, data } = await api.getAssets();
         if (ok) setAssetInventory(data.assets || []);
@@ -106,13 +125,16 @@ function RequestDetailPanel({
   const [showStopModal, setShowStopModal] = useState(false);
   const [hrReason, setHrReason] = useState("");
   const [stopReason, setStopReason] = useState("");
-
-  const handleSaveAdminOverrides = () => {
-    onSaveSoftware?.(request.id, [], pages.admin, {
-      employeeCode: adminEmpCodeDraft,
-      assetCode: adminAssetCodeDraft,
-    });
-  };
+  const linkedUserExists = allUsers.some((user) => {
+    const linkedEmails = [
+      request?.formData?.personalEmail,
+      request?.officialEmail,
+    ]
+      .map((email) => (email || "").trim().toLowerCase())
+      .filter(Boolean);
+    const userEmail = (user?.email || "").trim().toLowerCase();
+    return linkedEmails.includes(userEmail);
+  });
 
   const handleHrReviewSubmit = () => {
     const error = validateCommentInput(hrReason, "Reason");
@@ -167,6 +189,13 @@ function RequestDetailPanel({
   };
 
   const handleSaveManagerExtras = () => {
+    if (softwareDraft) {
+      const error = validateCommentInput(softwareDraft, "Software List");
+      if (error) {
+        onShowNotice?.("error", "Validation Error", error);
+        return;
+      }
+    }
     onSaveSoftware?.(request.id, normalizeSoftwareList(softwareDraft), role, {
       dateOfJoining: dateOfJoiningDraft,
     });
@@ -196,6 +225,13 @@ function RequestDetailPanel({
       onShowNotice?.("error", "Validation Error", error);
       return;
     }
+    if (softwareDraft) {
+      const swError = validateCommentInput(softwareDraft, "Software List");
+      if (swError) {
+        onShowNotice?.("error", "Validation Error", swError);
+        return;
+      }
+    }
     if (!infraExecutiveDraft) {
       onShowNotice?.("error", "Validation Error", "Please assign an Infrastructure Executive.");
       return;
@@ -205,6 +241,7 @@ function RequestDetailPanel({
       infraExecutive: infraExecutiveDraft,
       employeeCode: adminEmpCodeDraft,
       assetCode: assetCodeDraft,
+      infraSoftware: normalizeSoftwareList(softwareDraft),
     });
   };
 
@@ -248,15 +285,6 @@ function RequestDetailPanel({
         onShowNotice?.("error", "Validation Error", "All laptop specifications must be saved before approving.");
         return;
       }
-      if (
-        laptopModelDraft !== request.laptopModel || 
-        laptopRamDraft !== request.laptopRam || 
-        laptopStorageDraft !== request.laptopStorage || 
-        laptopProcessorDraft !== request.laptopProcessor
-      ) {
-        onShowNotice?.("error", "Validation Error", "Please click 'Save Specifications' before approving.");
-        return;
-      }
     }
 
     onApprove(request.id);
@@ -296,6 +324,13 @@ function RequestDetailPanel({
         <div>
           <span>Proposed Official Email</span>
           <strong>{request.officialEmail || "N/A"}</strong>
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <span>Linked Emails</span>
+          <strong>
+            Personal: {request.formData.personalEmail || "N/A"}{" "}
+            | Work: {request.officialEmail || "Pending"}
+          </strong>
         </div>
         <div>
           <span>Line Manager</span>
@@ -345,26 +380,37 @@ function RequestDetailPanel({
         title="Pre-installed on company laptop"
         tone="blue"
         items={request.preInstalledSoftware}
+        emptyMessage="No company-provided software has been assigned for this department yet."
+        showWhenEmpty
       />
 
       <SoftwareSection
         title="To be installed by employee"
         tone="yellow"
         items={request.employeeInstalledSoftware}
+        emptyMessage="No employee-installed software has been assigned for this department yet."
+        showWhenEmpty
       />
 
       <SoftwareSection
-        title="Software listed by Line Manager"
+        title="Special software approved by Manager"
         tone="orange"
         items={request.managerSoftware}
         headerLabel={request.formData.lineManager}
       />
 
+      <SoftwareSection
+        title="Software listed by Infrastructure Admin"
+        tone="cyan"
+        items={request.infraSoftware}
+        headerLabel={request.infraAdmin?.name}
+      />
+
       {request.laptopModel && (
-        <section className="software-input-card" style={{ borderTop: "2px solid #10b981", background: "#f0fdf4" }}>
+        <section className="software-input-card" style={{ borderTop: "2px solid #7e22ce", background: "#f3e8ff" }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h4 style={{ margin: 0 }}>Assigned Hardware Specifications</h4>
-            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#15803d', padding: '4px 10px', textTransform: 'uppercase'}}>
+            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#7e22ce', padding: '4px 10px', textTransform: 'uppercase'}}>
               {request.infraExecutive?.name || "N/A"}
             </span>
           </div>
@@ -374,22 +420,42 @@ function RequestDetailPanel({
             <div><span>Processor</span><strong>{request.laptopProcessor}</strong></div>
             <div><span>RAM</span><strong>{request.laptopRam}</strong></div>
             <div><span>Storage</span><strong>{request.laptopStorage}</strong></div>
-            <div><span>GPU</span><strong>{request.laptopGpu || "N/A"}</strong></div>
+            <div><span>GPU</span><strong>{request.laptopGpu || "Integrated Graphics"}</strong></div>
           </div>
           {isEmployee && !request.laptopAcknowledged && (
-            <div className="detail-actions" style={{ marginTop: "24px" }}>
+            <div className="detail-actions" style={{ marginTop: "24px", display: "grid", gap: "12px" }}>
+              <div style={{ padding: "14px", borderRadius: "12px", background: "#fff7ed", border: "1px solid #fdba74", color: "#9a3412" }}>
+                <label style={{ display: "flex", gap: "10px", alignItems: "flex-start", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={laptopReceiptConfirmed}
+                    onChange={(event) => setLaptopReceiptConfirmed(event.target.checked)}
+                    style={{ marginTop: "4px", accentColor: "#7e22ce" }}
+                  />
+                  <span style={{ lineHeight: 1.5 }}>
+                    I confirm that I have received the laptop listed above, checked it for visible damage or missing accessories, and understand that I am responsible for its safe use under company policy.
+                  </span>
+                </label>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.9rem", color: "#475569" }}>
+                You must check the box above before acknowledging receipt.
+              </p>
               <button 
                 type="button" 
                 className="primary-button" 
-                style={{ background: "#10b981", width: "100%" }}
-                onClick={() => onAcknowledgeLaptop?.(request.id)}
+                style={{ background: laptopReceiptConfirmed ? "#7e22ce" : "#c4b5fd", width: "100%", cursor: laptopReceiptConfirmed ? "pointer" : "not-allowed" }}
+                onClick={() => {
+                  if (!laptopReceiptConfirmed) return;
+                  onAcknowledgeLaptop?.(request.id);
+                }}
+                disabled={!laptopReceiptConfirmed}
               >
                 Acknowledge Receipt of Laptop
               </button>
             </div>
           )}
           {request.laptopAcknowledged && (
-            <div style={{ marginTop: "16px", padding: "12px", background: "#dcfce7", color: "#166534", borderRadius: "8px", textAlign: "center", fontWeight: "600" }}>
+            <div style={{ marginTop: "16px", padding: "12px", background: "#f3e8ff", color: "#7e22ce", borderRadius: "8px", textAlign: "center", fontWeight: "600" }}>
               ✓ Laptop receipt acknowledged.
             </div>
           )}
@@ -399,7 +465,8 @@ function RequestDetailPanel({
       {role === pages.admin && (
         <section className="software-input-card" style={{ borderTop: "2px solid #102a43", background: "#f8fafc" }}>
           <h4>Admin Institutional Overrides</h4>
-          <p>Directly modify unique identifiers. Changes will sync with user profiles where applicable.</p>
+          <p>Directly modify unique identifiers and key dates. Changes will sync with user profiles where applicable.</p>
+          
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "16px" }}>
             <div className="form-group">
               <label>Employee Code</label>
@@ -407,31 +474,107 @@ function RequestDetailPanel({
                 type="text"
                 className="dashboard-search"
                 value={adminEmpCodeDraft}
-                onChange={(e) => setAdminEmpCodeDraft(cleanNumericInput(e.target.value, 4))}
-                placeholder="1001"
-                maxLength={4}
+                onChange={(e) => setAdminEmpCodeDraft(cleanNumericInput(e.target.value, 5))}
+                placeholder="10001"
+                maxLength={5}
               />
             </div>
             <div className="form-group">
-              <label>Asset Code</label>
+              <label>Date of Joining</label>
               <input
-                type="text"
+                type="date"
                 className="dashboard-search"
-                value={adminAssetCodeDraft}
-                onChange={(e) => setAdminAssetCodeDraft(cleanTextInput(e.target.value, 20))}
-                placeholder="LP-XXX"
-                maxLength={20}
+                style={{ width: "100%" }}
+                value={dateOfJoiningDraft}
+                onChange={(event) => setDateOfJoiningDraft(event.target.value)}
               />
             </div>
           </div>
+
+          <div style={{ marginTop: "12px", position: "relative" }}>
+            <label style={{ display: "block", marginBottom: "8px", fontSize: "0.85rem", fontWeight: "600", color: "#475569" }}>
+              Search & Select Asset Code (Laptop Model)
+            </label>
+            <input
+              type="text"
+              className="dashboard-search"
+              style={{ width: "100%", paddingRight: "40px" }}
+              value={assetSearch}
+              onChange={(e) => {
+                setAssetSearch(e.target.value);
+                setIsAssetDropdownOpen(true);
+              }}
+              onFocus={() => {
+                if (assetInventory.length === 0) {
+                   // Fetch if not already loaded
+                   api.getAssets().then(({ok, data}) => { if(ok) setAssetInventory(data.assets || []); });
+                }
+                setIsAssetDropdownOpen(true);
+              }}
+              placeholder="Search (e.g. LAP-1001)..."
+            />
+            <button 
+              type="button" 
+              className="ghost-button" 
+              style={{ position: "absolute", right: "8px", top: "32px", padding: "4px" }}
+              onClick={() => setIsAssetDropdownOpen(!isAssetDropdownOpen)}
+            >
+              {isAssetDropdownOpen ? "▲" : "▼"}
+            </button>
+
+            {isAssetDropdownOpen && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 100,
+                background: "#fff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                maxHeight: "200px",
+                overflowY: "auto",
+                marginTop: "4px"
+              }}>
+                {filteredAssets.length === 0 ? (
+                  <div style={{ padding: "12px", color: "#64748b", textAlign: "center" }}>No assets found.</div>
+                ) : (
+                  filteredAssets.map(asset => (
+                    <div 
+                      key={asset.id} 
+                      style={{ padding: "10px 16px", cursor: "pointer", borderBottom: "1px solid #f1f5f9" }}
+                      onClick={() => handleSelectAsset(asset)}
+                      className="asset-option-hover"
+                    >
+                      <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>{asset.assetCode}</div>
+                      <div style={{ fontSize: "0.8rem", color: "#64748b" }}>{asset.laptopModel}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="detail-actions detail-actions-compact" style={{ marginTop: "16px" }}>
             <button
               type="button"
               className="primary-button"
-              onClick={handleSaveAdminOverrides}
+              onClick={() => {
+                onSaveSoftware?.(request.id, [], pages.admin, {
+                  employeeCode: adminEmpCodeDraft,
+                  assetCode: assetCodeDraft,
+                  dateOfJoining: dateOfJoiningDraft,
+                  laptopModel: laptopModelDraft,
+                  laptopRam: laptopRamDraft,
+                  laptopStorage: laptopStorageDraft,
+                  laptopProcessor: laptopProcessorDraft,
+                  laptopGpu: laptopGpuDraft,
+                });
+              }}
               style={{ background: "#102a43" }}
             >
-              Save Institutional Overrides
+              Save Admin Overrides
             </button>
           </div>
         </section>
@@ -655,7 +798,7 @@ function RequestDetailPanel({
                           onClick={() => handleSelectAsset(asset)}
                           className="asset-option-hover"
                         >
-                          <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>{asset.assetCode} {asset.isAssigned ? "(Already Assigned)" : ""}</div>
+                          <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>{asset.assetCode}</div>
                           <div style={{ fontSize: "0.8rem", color: "#64748b" }}>{asset.laptopModel} | {asset.laptopProcessor} | {asset.laptopRam} | {asset.laptopStorage}</div>
                         </div>
                       ))
@@ -736,7 +879,7 @@ function RequestDetailPanel({
           </button>
           <button
             type="button"
-            className="warning-button"
+            className="action-button action-button-delete"
             onClick={() => setShowHrModal(true)}
           >
             HR Review
@@ -747,12 +890,12 @@ function RequestDetailPanel({
       {(canHrStop || canHrEdit) ? (
         <div className="detail-actions">
           {canHrStop && (
-            <button type="button" className="warning-button" onClick={() => setShowStopModal(true)}>
+            <button type="button" className="action-button action-button-delete" onClick={() => setShowStopModal(true)}>
               Stop Case
             </button>
           )}
           {canHrEdit && (
-            <button type="button" className="primary-button" onClick={() => onStartHrEdit(request.id)}>
+            <button type="button" className="action-button action-button-edit" onClick={() => onStartHrEdit(request.id)}>
               Edit and Re-submit
             </button>
           )}
@@ -762,11 +905,11 @@ function RequestDetailPanel({
       {showHrModal && (
         <div className="modal-backdrop">
           <div className="modal-card" style={{ width: "400px" }}>
-            <div className="modal-topbar">
-              <div>
-                <h3>Request HR Review</h3>
-                <p>Provide a reason for sending this request back to HR.</p>
-              </div>
+              <div className="modal-topbar">
+                <div>
+                  <h3>Request HR Review</h3>
+                  <p>Provide a reason for sending this request back to HR.</p>
+                </div>
               <button className="ghost-button" onClick={() => setShowHrModal(false)}>✕</button>
             </div>
             <div style={{ padding: "24px" }}>
@@ -835,15 +978,17 @@ function RequestDetailPanel({
         <p className="detail-note">{stageMeta.description}</p>
       ) : null}
 
-      {role === pages.admin && onDeleteRequest && (
+      {role === pages.admin && onDeleteRequest && !linkedUserExists && (
         <div className="detail-actions" style={{ marginTop: "24px", borderTop: "1px solid #e2e8f0", paddingTop: "24px" }}>
           <button 
             type="button" 
-            className="warning-button" 
-            style={{ width: "100%", background: "#ef4444" }}
+            className="action-button action-button-delete" 
+            style={{ width: "100%" }}
+            disabled={["manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"].includes(request.stage)}
+            title={["manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"].includes(request.stage) ? "Stop the request first, then delete it." : "Delete the request."}
             onClick={() => onDeleteRequest(request.id)}
           >
-            Delete Permanently from Database
+            {["manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"].includes(request.stage) ? "Stop Request First" : "Delete Request"}
           </button>
         </div>
       )}

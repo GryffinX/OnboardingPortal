@@ -10,6 +10,12 @@ function SummaryStrip({ requests }) {
   const hrReview = requests.filter(
     (request) => request.stage === workflowStages.hr,
   ).length;
+  const infAdmin = requests.filter(
+    (request) => request.stage === workflowStages.infraAdmin,
+  ).length;
+  const infExec = requests.filter(
+    (request) => request.stage === workflowStages.infraExecutive,
+  ).length;
 
   return (
     <section className="summary-strip">
@@ -24,6 +30,14 @@ function SummaryStrip({ requests }) {
       <div className="summary-card">
         <span>HR Review Queue</span>
         <strong>{hrReview}</strong>
+      </div>
+      <div className="summary-card">
+        <span>Infrastructure Admin Review Queue</span>
+        <strong>{infAdmin}</strong>
+      </div>
+      <div className="summary-card">
+        <span>Infrastructure Executive Review Queue</span>
+        <strong>{infExec}</strong>
       </div>
     </section>
   );
