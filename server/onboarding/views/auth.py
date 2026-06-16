@@ -116,9 +116,13 @@ def login_view(request):
 
     if user is not None:
         role, department_name, phone_number, employee_code, is_active = resolve_user_role_and_department(user)
+        
+        from .utils import generate_jwt
+        token = generate_jwt(user)
 
         return JsonResponse({
             "message": "Login successful",
+            "token": token,
             "user": {
                 "id": user.id,
                 "name": f"{user.first_name} {user.last_name}".strip() or user.username,

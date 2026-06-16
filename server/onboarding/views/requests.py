@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 
 from ..models import OnboardingRequest, AssetInventory, validate_comment_text
-from .utils import parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification
+from .utils import jwt_required, parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification
 from .changelog import log_change, snapshot_request, describe_request_changes, is_admin_user, get_actor
 from .common import get_department_software_lists
 
@@ -137,6 +137,7 @@ def serialize_request(record):
 # --- ASSET INVENTORY VIEWS ---
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["GET"])
 def get_assets(request):
     assets = AssetInventory.objects.all().order_by("asset_code")
@@ -157,6 +158,7 @@ def get_assets(request):
     return JsonResponse({"assets": asset_list})
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def create_asset(request):
     try:
@@ -196,6 +198,7 @@ def create_asset(request):
         return JsonResponse({"message": f"Failed to create asset: {str(exc)}"}, status=500)
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def update_asset(request):
     try:
@@ -243,6 +246,7 @@ def update_asset(request):
         return JsonResponse({"message": f"Failed to update asset: {str(exc)}"}, status=500)
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def delete_asset(request):
     try:
@@ -265,6 +269,7 @@ def delete_asset(request):
         return JsonResponse({"message": "Failed to delete asset."}, status=500)
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["GET"])
 def get_requests(request):
     records = OnboardingRequest.objects.all().order_by("-submitted_at", "-id")
@@ -272,6 +277,7 @@ def get_requests(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def acknowledge_laptop(request):
     try:
@@ -293,6 +299,7 @@ def acknowledge_laptop(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def save_request(request):
     try:
@@ -545,12 +552,13 @@ def save_request(request):
         return JsonResponse({"message": "An internal server error occurred."}, status=500)
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["GET"])
 def get_changelogs(request):
     from django.utils import timezone
     from ..models import ChangeLog
 
-    actor_id = request.GET.get("actorId")
+    actor_id = getattr(request, 'user_id', None)
     actor = get_actor(actor_id)
     if not is_admin_user(actor):
         return JsonResponse({"message": "Access denied. Admin privileges required."}, status=403)
@@ -578,6 +586,7 @@ def get_changelogs(request):
     return JsonResponse({"changelogs": log_list})
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def delete_request(request):
     try:

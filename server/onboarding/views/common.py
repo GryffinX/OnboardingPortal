@@ -5,7 +5,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from ..models import Department, SoftwareCatalogItem
-from .utils import validate_generic_input
+from .utils import jwt_required, validate_generic_input
 from .changelog import log_change
 
 
@@ -47,6 +47,7 @@ def get_department_software_lists(dept_name):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["GET"])
 def get_departments(request):
     depts = Department.objects.all().values_list('name', flat=True)
@@ -54,6 +55,7 @@ def get_departments(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["GET"])
 def get_software_catalog(request):
     items = SoftwareCatalogItem.objects.all().select_related('department')
@@ -71,6 +73,7 @@ def get_software_catalog(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["GET"])
 def get_workflow_options(request):
     dept_name = request.GET.get("department")
@@ -86,6 +89,7 @@ def get_workflow_options(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def create_software_item(request):
     try:
@@ -133,6 +137,7 @@ def create_software_item(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def delete_software_item(request):
     try:
@@ -167,6 +172,7 @@ def delete_software_item(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def update_software_item(request):
     try:
@@ -226,6 +232,7 @@ def update_software_item(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def update_department(request):
     try:
@@ -268,6 +275,7 @@ def update_department(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def delete_department(request):
     try:

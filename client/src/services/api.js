@@ -1,5 +1,30 @@
 const apiBaseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+function getAuthHeaders(existingHeaders = {}) {
+  const sessionData = localStorage.getItem('onboarding_session');
+  let token = null;
+  if (sessionData) {
+    try {
+      token = JSON.parse(sessionData).token;
+    } catch(e) {}
+  }
+  const headers = { ...existingHeaders };
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token;
+  }
+  return headers;
+}
+
+const originalFetch = window.fetch;
+window.fetch = function() {
+    let [resource, config] = arguments;
+    if (typeof resource === 'string' && resource.includes('/api/') && !resource.includes('/api/login') && !resource.includes('/api/forgot-password') && !resource.includes('/api/verify-otp') && !resource.includes('/api/reset-password')) {
+        config = config || {};
+        config.headers = getAuthHeaders(config.headers);
+    }
+    return originalFetch(resource, config);
+};
+
 export const api = {
   async login(email, password) {
     const response = await fetch(`${apiBaseUrl}/api/login`, {

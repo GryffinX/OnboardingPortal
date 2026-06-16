@@ -119,13 +119,15 @@ export function validateGenericInput(value, fieldName) {
 }
 
 export function validateDepartmentName(dept) {
+  const fieldName = "Department Name";
+  const value = dept;
   if (!value) return `${fieldName} is required.`;
   if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
   if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
   if (/[%:;"'<>(){}[\]|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
   if (value.length < 2) return `${fieldName} must be at least 2 characters long.`;
   if (validateGibberish(value)) return `${fieldName} contains invalid or gibberish text. Please use meaningful words.`;
-  if (/[1-9]/.test(value)) return `${fieldName} cannot contain numbers.`;
+  if (/[0-9]/.test(value)) return `${fieldName} cannot contain numbers.`;
   return null;
 }
 export function validateGibberish(value) {
@@ -154,7 +156,7 @@ export function validateCommentInput(value, fieldName) {
   if (!value) return `${fieldName} is required.`;
   if (value.startsWith(" ") || value.endsWith(" ")) return `${fieldName} cannot start or end with a space.`;
   if (value.includes("  ")) return `${fieldName} cannot contain double spaces.`;
-  if (/[<>|\\~`^!*+?]/.test(value)) return `${fieldName} contains restricted special characters.`;
+  if (/[<>|\\~`^*+]/.test(value)) return `${fieldName} contains restricted special characters.`;
   if (value.length > 500) return `${fieldName} must be less than 500 characters.`;
   if (validateGibberish(value)) return `${fieldName} contains invalid or gibberish text. Please use meaningful words.`;
   return null;

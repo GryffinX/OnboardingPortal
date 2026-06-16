@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.models import User
 from ..models import UserProfile, Department, PasswordResetOTP
-from .utils import normalize_role, validate_user_payload, validate_generic_input, generate_otp, resolve_user_role_and_department
+from .utils import jwt_required, admin_required, normalize_role, validate_user_payload, validate_generic_input, generate_otp, resolve_user_role_and_department
 from .changelog import log_change, describe_user_changes
 from django.core.exceptions import ValidationError
 
@@ -14,6 +14,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 @csrf_exempt
+@admin_required
 @require_http_methods(["POST"])
 def create_user(request):
     try:
@@ -123,6 +124,7 @@ def create_user(request):
 
 
 @csrf_exempt
+@admin_required
 @require_http_methods(["POST"])
 def update_user(request):
     try:
@@ -254,6 +256,7 @@ def update_user(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def request_profile_update_otp(request):
     try:
@@ -283,6 +286,7 @@ def request_profile_update_otp(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def verify_profile_update(request):
     try:
@@ -375,6 +379,7 @@ def verify_profile_update(request):
 
 
 @csrf_exempt
+@admin_required
 @require_http_methods(["POST"])
 def create_department(request):
     try:
@@ -407,6 +412,7 @@ def create_department(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["GET"])
 def get_users(request):
     users = User.objects.all().select_related('profile', 'profile__department')
@@ -428,6 +434,7 @@ def get_users(request):
 
 
 @csrf_exempt
+@admin_required
 @require_http_methods(["POST"])
 def bulk_update_users_status(request):
     try:
@@ -458,6 +465,7 @@ def bulk_update_users_status(request):
 
 
 @csrf_exempt
+@admin_required
 @require_http_methods(["POST"])
 def delete_user(request):
     try:

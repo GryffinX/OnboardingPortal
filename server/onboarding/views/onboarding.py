@@ -9,6 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.models import User
 from ..models import UserProfile, Department, OnboardingRequest
+from .utils import jwt_required
 from .utils import (
     validate_payload, 
     build_message, 
@@ -39,6 +40,7 @@ def _get_employee_code_by_name(name):
     return ""
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST", "GET"])
 def onboarding_requests_view(request):
     if request.method == "GET":
@@ -159,6 +161,7 @@ def onboarding_requests_view(request):
 
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def onboarding_email(request):
     try:
@@ -294,6 +297,7 @@ def get_next_employee_code():
     return str(max_num + 1)
 
 @csrf_exempt
+@jwt_required
 @require_http_methods(["POST"])
 def finalize_onboarding(request):
     try:
@@ -368,7 +372,7 @@ def finalize_onboarding(request):
 
                 # Send email only to new users with FULL DETAILS
                 try:
-                    from .utils import sanitize_for_email
+                    from .utils import jwt_required, sanitize_for_email
                     # Prepare software lists for email
                     pre_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.pre_installed_software))) if onb_req else "Standard Pre-installed"
                     emp_sw = sanitize_for_email(", ".join(parse_software_list(onb_req.employee_installed_software))) if onb_req else "Standard Employee Setup"

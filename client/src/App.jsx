@@ -526,7 +526,7 @@ function App() {
       };
       setIsAuthenticated(true);
       setCurrentUser(normalizedUser);
-      writeStoredSession({ user: normalizedUser });
+      writeStoredSession({ user: normalizedUser, token: data.token });
       
       // We don't have requests yet for the new user, so keep request-based tabs available until data loads
       setCurrentPage(resolveAllowedPage(normalizedUser, null, null, false));

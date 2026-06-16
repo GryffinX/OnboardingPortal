@@ -294,3 +294,52 @@ def parse_software_list(value):
 def dump_software_list(items):
     import json
     return json.dumps(parse_software_list(items))
+
+import jwt
+import datetime
+from django.http import JsonResponse
+from functools import wraps
+
+def generate_jwt(user):
+    payload = {
+        'user_id': user.id,
+        'email': user.email,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24),
+        'iat': datetime.datetime.utcnow()
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+
+def jwt_required(view_func):
+    @wraps(view_func)
+    def _wrapped_view(request, *args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return JsonResponse({'message': 'Authentication credentials were not provided.'}, status=401)
+        
+        token = auth_header.split(' ')[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
+            request.user_id = payload['user_id']
+            request.user_email = payload['email']
+        except jwt.ExpiredSignatureError:
+            return JsonResponse({'message': 'Signature has expired.'}, status=401)
+        except jwt.InvalidTokenError:
+            return JsonResponse({'message': 'Invalid token.'}, status=401)
+            
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
+
+def admin_required(view_func):
+    @wraps(view_func)
+    @jwt_required
+    def _wrapped_view(request, *args, **kwargs):
+        from django.contrib.auth.models import User
+        try:
+            user = User.objects.get(id=request.user_id)
+            role, _, _, _, _ = resolve_user_role_and_department(user)
+            if role != "Admin":
+                return JsonResponse({'message': 'You do not have permission to perform this action.'}, status=403)
+        except User.DoesNotExist:
+            return JsonResponse({'message': 'User not found.'}, status=404)
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
