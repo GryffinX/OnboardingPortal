@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 
 from ..models import OnboardingRequest, AssetInventory, validate_comment_text
-from .utils import jwt_required, parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification
+from .utils import jwt_required, admin_required, parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification
 from .changelog import log_change, snapshot_request, describe_request_changes, is_admin_user, get_actor
 from .common import get_department_software_lists
 
@@ -143,7 +143,17 @@ def get_assets(request):
     assets = AssetInventory.objects.all().order_by("asset_code")
     asset_list = []
     for asset in assets:
-        assigned_count = OnboardingRequest.objects.filter(asset_code=asset.asset_code).exclude(asset_code="").count()
+        assignments = OnboardingRequest.objects.filter(asset_code=asset.asset_code).exclude(asset_code="")
+        assigned_details = []
+        for req in assignments:
+            assigned_details.append({
+                "employeeName": req.employee_name,
+                "employeeCode": req.employee_code or "N/A",
+                "requestCode": req.request_code,
+                "department": req.department,
+                "stage": req.stage,
+            })
+        
         asset_list.append({
             "id": asset.id,
             "assetCode": asset.asset_code,
@@ -152,8 +162,9 @@ def get_assets(request):
             "laptopRam": asset.laptop_ram,
             "laptopStorage": asset.laptop_storage,
             "laptopGpu": asset.laptop_gpu,
-            "assignedCount": assigned_count,
-            "isAssigned": assigned_count > 0 or asset.is_assigned,
+            "assignedCount": len(assigned_details),
+            "assignments": assigned_details,
+            "isAssigned": len(assigned_details) > 0 or asset.is_assigned,
         })
     return JsonResponse({"assets": asset_list})
 
@@ -360,7 +371,21 @@ def save_request(request):
                 if "managerSoftware" in payload: req.manager_software = dump_software_list(payload["managerSoftware"])
                 
                 if "assetCode" in payload:
-                    req.asset_code = (payload["assetCode"] or "").strip()
+                    new_asset_code = (payload["assetCode"] or "").strip()
+                    if new_asset_code != req.asset_code:
+                        # Free up old asset if it exists
+                        if req.asset_code:
+                            old_asset = AssetInventory.objects.filter(asset_code=req.asset_code).first()
+                            if old_asset:
+                                old_asset.is_assigned = False
+                                old_asset.save()
+                        # Assign new asset
+                        if new_asset_code:
+                            new_asset = AssetInventory.objects.filter(asset_code=new_asset_code).first()
+                            if new_asset:
+                                new_asset.is_assigned = True
+                                new_asset.save()
+                    req.asset_code = new_asset_code
 
                 if "employeeCode" in payload:
                     from django.contrib.auth.models import User
@@ -446,6 +471,15 @@ def save_request(request):
                 
                 if "infraSoftware" in payload:
                     req.infra_software = dump_software_list(payload["infraSoftware"])
+
+                # Reset acknowledgement if sensitive fields changed during Admin/Institutional Override
+                reset_happened = False
+                if req.laptop_acknowledged:
+                    asset_changed = (before.get("asset_code") or "").strip() != (req.asset_code or "").strip()
+                    code_changed = (before.get("employee_code") or "").strip() != (req.employee_code or "").strip()
+                    if asset_changed or code_changed:
+                        req.laptop_acknowledged = False
+                        reset_happened = True
                 
                 # Revision count logic: only increment when sent for HR Review
                 if "stage" in payload and payload["stage"] == "hr_review":
@@ -465,6 +499,8 @@ def save_request(request):
                 action_type = payload.get("actionType", "Update")
                 if actor_id:
                     description = describe_request_changes(before, req)
+                    if reset_happened:
+                        description = "Employee acknowledgement reset due to Institutional Override; " + description
                     log_change(actor_id, action_type, description, req)
 
                 return JsonResponse({"message": "Request updated successfully.", "request": serialize_request(req)})
@@ -586,42 +622,103 @@ def get_changelogs(request):
     return JsonResponse({"changelogs": log_list})
 
 @csrf_exempt
-@jwt_required
+@admin_required
 @require_http_methods(["POST"])
 def delete_request(request):
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
         request_id = payload.get("id")
+        delete_reason = payload.get("reason", "")
+        actor_id = payload.get("actorId")
         
         if not request_id:
             return JsonResponse({"message": "Request ID is required."}, status=400)
             
         with transaction.atomic():
             record = OnboardingRequest.objects.get(id=request_id)
-            req_code = record.request_code
-            emp_name = record.employee_name
-            workflow_stages = {"manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"}
-            if record.stage in workflow_stages:
-                return JsonResponse({"message": "Stop the request first, then delete it."}, status=400)
+            
+            # 1. Active workflow check
+            active_workflow_stages = {"manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"}
+            if record.stage in active_workflow_stages:
+                return JsonResponse({"message": "Active workflow requests cannot be archived. Stop the request first."}, status=400)
 
-            # A request can only be deleted after the related user account has been removed.
+            # 2. Linked user account check
             from django.contrib.auth.models import User
             from django.db.models import Q
-            user = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).first()
-            if user:
-                return JsonResponse({"message": "Delete the linked user account first before deleting this request."}, status=400)
+            user_exists = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).exists()
+            if user_exists:
+                return JsonResponse({"message": "Delete the linked user account first before archiving this request."}, status=400)
 
-            actor_id = payload.get("actorId")
+            # 3. Status check (Must be Approved or Stopped)
+            if record.stage not in ["approved", "stopped"]:
+                return JsonResponse({"message": "Only Approved or Stopped requests can be archived."}, status=400)
+
+            # Perform SOFT DELETE
+            record.is_deleted = True
+            record.deleted_at = datetime.now()
+            # Storing previous stage is technically redundant since we just check record.stage, 
+            # but we'll add it to the delete_reason just in case it's needed for audit context.
+            if actor_id:
+                record.deleted_by = User.objects.filter(id=actor_id).first()
+            
+            final_reason = f"Archived from stage: {record.stage}. "
+            if delete_reason:
+                final_reason += f"Reason: {delete_reason}"
+            record.delete_reason = final_reason
+            
+            record.save()
+
             if actor_id:
                 log_change(
                     actor_id,
-                    "Request Deleted",
-                    f"Permanently deleted request {req_code} for {emp_name}",
+                    "Request Archived",
+                    f"Soft-deleted/archived request {record.request_code} for {record.employee_name}. {final_reason}",
+                    record
                 )
 
-            record.delete()
-            return JsonResponse({"ok": True, "message": "Stopped onboarding request deleted permanently."})
+            return JsonResponse({"ok": True, "message": "Onboarding request has been archived successfully."})
+            
     except OnboardingRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found."}, status=404)
     except Exception as exc:
-        return JsonResponse({"message": "An internal server error occurred."}, status=500)
+        return JsonResponse({"message": f"An internal server error occurred: {str(exc)}"}, status=500)
+
+@csrf_exempt
+@admin_required
+@require_http_methods(["POST"])
+def restore_request(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        request_id = payload.get("id")
+        actor_id = payload.get("actorId")
+        
+        if not request_id:
+            return JsonResponse({"message": "Request ID is required."}, status=400)
+            
+        with transaction.atomic():
+            record = OnboardingRequest.objects.get(id=request_id)
+            
+            if not record.is_deleted:
+                return JsonResponse({"message": "This request is not currently archived."}, status=400)
+
+            # Perform UNARCHIVE / RESTORE
+            record.is_deleted = False
+            record.deleted_at = None
+            record.deleted_by = None
+            # We preserve the record.stage since we didn't wipe it out.
+            record.save()
+
+            if actor_id:
+                log_change(
+                    actor_id,
+                    "Request Restored",
+                    f"Restored/unarchived request {record.request_code} for {record.employee_name}. Returned to active {record.stage} stage.",
+                    record
+                )
+
+            return JsonResponse({"ok": True, "message": f"Request restored successfully to {record.stage}."})
+            
+    except OnboardingRequest.DoesNotExist:
+        return JsonResponse({"message": "Request not found."}, status=404)
+    except Exception as exc:
+        return JsonResponse({"message": f"An internal server error occurred: {str(exc)}"}, status=500)

@@ -45,7 +45,13 @@ def _get_employee_code_by_name(name):
 def onboarding_requests_view(request):
     if request.method == "GET":
         from django.db.models import Q
-        requests = OnboardingRequest.objects.all().order_by("-id")
+        include_archived = request.GET.get("includeArchived") == "true"
+        
+        if include_archived:
+            requests = OnboardingRequest.objects.all().order_by("-id")
+        else:
+            requests = OnboardingRequest.objects.filter(is_deleted=False).order_by("-id")
+            
         request_list = []
         for req in requests:
             department_lists = get_department_software_lists(req.department)
@@ -286,9 +292,9 @@ def get_next_employee_code():
     import re
     from ..models import UserProfile
     profiles = UserProfile.objects.exclude(employee_code__isnull=True).exclude(employee_code='')
-    max_num = 999
+    max_num = 9999
     for p in profiles:
-        match = re.search(r"^(\d{4,})$", p.employee_code)
+        match = re.search(r"^(\d{5,})$", p.employee_code)
         if match:
             num = int(match.group(1))
             if num > max_num:
@@ -361,6 +367,7 @@ def finalize_onboarding(request):
                 employee_code = payload.get("employeeCode")
                 if not employee_code:
                     employee_code = get_next_employee_code()
+                    print('GEN_CODE', repr(employee_code))
 
                 # Create/Update profile
                 profile, created = UserProfile.objects.update_or_create(

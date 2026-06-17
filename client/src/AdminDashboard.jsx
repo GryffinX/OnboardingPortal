@@ -32,8 +32,8 @@ const AdminDashboard = ({
   users, 
   currentUser,
   onAddUser, 
-  onUpdateUser, 
-  onDeleteUser, 
+  onUpdateUser,
+  onDeleteUser,
   onShowConfirm,
   onShowNotice,
   apiBaseUrl = "http://127.0.0.1:8000" 
@@ -58,13 +58,22 @@ const AdminDashboard = ({
   const [assets, setAssets] = useState([]);
   const [newAsset, setNewAsset] = useState({ assetCode: '', laptopModel: '', laptopProcessor: '', laptopRam: '', laptopStorage: '', laptopGpu: '' });
   const [editingAsset, setEditingAsset] = useState(null);
+  const [viewingAssetAssignments, setViewingAssetAssignments] = useState(null); // null or asset object
 
   const [changelogs, setChangelogs] = useState([]);
   const [changelogSearch, setChangelogSearch] = useState("");
+  const [archivedRequests, setArchivedRequests] = useState([]);
 
   const fetchChangelogs = async () => {
     const { ok, data } = await api.fetchChangelogs(currentUser?.id);
     if (ok && data.changelogs) setChangelogs(data.changelogs);
+  };
+
+  const fetchArchivedRequests = async () => {
+    const { ok, data } = await api.fetchRequests(true); // includeArchived=true
+    if (ok && data.requests) {
+      setArchivedRequests(data.requests.filter(r => r.isDeleted));
+    }
   };
 
   const fetchAssets = async () => {
@@ -140,9 +149,18 @@ const AdminDashboard = ({
       await fetchCatalog();
       await fetchAssets();
       await fetchChangelogs();
+      await fetchArchivedRequests();
     };
     initDashboard();
   }, [apiBaseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDeleteUser = async (email, archiveRequest = false) => {
+    const { ok, data } = await onDeleteUser(email, archiveRequest);
+    if (ok) {
+      // Refresh user list and potentially archived list
+      if (archiveRequest) fetchArchivedRequests();
+    }
+  };
 
   const safeUsers = Array.isArray(users)
     ? users
@@ -284,12 +302,14 @@ const AdminDashboard = ({
           { key: "users", label: "Staff Accounts" },
           { key: "software", label: "Catalog & Deptartments" },
           { key: "hardware", label: "Hardware Inventory" },
+          { key: "archived", label: "Archived Requests" },
           { key: "logs", label: "Audit Log" },
         ]}
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
           if (tab === "logs") fetchChangelogs();
+          if (tab === "archived") fetchArchivedRequests();
         }}
       />
 
@@ -357,13 +377,23 @@ const AdminDashboard = ({
                   "HR": "HR"
                 }[roleName] || "??";
 
+                const roleTone = {
+                  "Admin": "admin",
+                  "Manager": "pending",
+                  "HOD": "hod",
+                  "Infrastructure Admin": "infra-admin",
+                  "Infrastructure Executive": "infra-exec",
+                  "Employee": "employee",
+                  "HR": "review"
+                }[roleName] || "employee";
+
                 return (
                   <div key={index} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.5fr 0.8fr 1fr 0.6fr 1fr" }}>
                     <div><strong>{user.name}</strong><div style={{ fontSize: '0.75rem', color: '#64748b' }}>Code: {user.employeeCode || "N/A"} | {user.phoneNumber || "No phone"}</div></div>
                     <span style={{ fontSize: "0.9rem", color: "#475569" }}>{user.email}</span>
                     <div>
                       <span 
-                        className={`status-pill status-pill-${roleName.toLowerCase().replace(/\s+/g, '-')}`}
+                        className={`status-pill status-pill-${roleTone}`}
                         title={roleName}
                         style={{ minWidth: '32px' }}
                       >
@@ -374,20 +404,86 @@ const AdminDashboard = ({
                     <span className={`status-pill status-pill-${user.isActive ? 'approved' : 'stopped'}`}>{user.isActive ? 'Active' : 'Inactive'}</span>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button type="button" className="action-button action-button-edit" style={{ flex: 1 }} onClick={() => { setEditingUser({...user, originalEmail: user.email, password: ""}); setShowModal('edit'); }}>Edit</button>
-                      <button type="button" className="action-button action-button-delete" style={{ flex: 1 }} onClick={() => onShowConfirm({
-                        title: "Delete Only User",
-                        message: `Delete only the user account for "${user.name}"? The request will remain available until it is deleted separately.`,
-                        confirmLabel: "Delete User",
+                      <button type="button" className="action-button action-button-delete" style={{ flex: 1, padding: "4px" }} onClick={() => onShowConfirm({
+                        title: "Deletion Options",
+                        message: (
+                          <div>
+                            <p>Choose how to remove <strong>{user.name}</strong>:</p>
+                            <div style={{ marginTop: "12px", textAlign: "left", fontSize: "0.85rem", color: "#475569" }}>
+                              <p><strong>1. Delete User Only:</strong> Removes login access. Employee code and emails become available for reuse. Onboarding request remains visible for audit.</p>
+                              <p style={{ marginTop: "8px" }}><strong>2. Delete User + Archive Request:</strong> Removes login access AND hides the onboarding request from all operational views (Soft Delete).</p>
+                            </div>
+                          </div>
+                        ),
+                        confirmLabel: "Delete User Only",
+                        secondaryLabel: "Delete & Archive Request",
                         tone: "danger",
-                        onConfirm: () => onDeleteUser(user.email),
+                        onConfirm: () => onDeleteUser(user.email, false),
+                        onSecondary: () => onDeleteUser(user.email, true)
                       })}>
-                        Delete Only User
+                        Delete...
                       </button>
                     </div>
                   </div>
                 );
               })
             )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'archived' && (
+        <section className="dashboard-panel">
+          <div className="dashboard-head">
+            <div>
+              <h2>Archived Onboarding Requests</h2>
+              <p>Viewing soft-deleted records. These items are hidden from operational dashboards.</p>
+            </div>
+          </div>
+          <div className="request-table">
+            <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr 1fr" }}>
+              <span>Employee</span>
+              <span>Identifiers</span>
+              <span>Final Status</span>
+              <span>Archived Date</span>
+              <span>Actions</span>
+            </div>
+            <div className="request-rows">
+              {archivedRequests.length === 0 ? (
+                <div className="request-empty">No archived requests found.</div>
+              ) : (
+                archivedRequests.map((req) => (
+                  <div key={req.id} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr 1fr" }}>
+                    <div><strong>{req.formData.name}</strong><div style={{ fontSize: '0.75rem', color: '#64748b' }}>{req.formData.department}</div></div>
+                    <div>
+                      <div style={{ fontSize: '0.85rem' }}>Code: {req.employeeCode || "N/A"}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{req.formData.personalEmail}</div>
+                    </div>
+                    <div>
+                      <span className={`status-pill status-pill-${req.stage.replace('_', '-')}`}>
+                        {req.stage.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{req.lastUpdated}</span>
+                    <button 
+                      type="button" 
+                      className="action-button action-button-edit" 
+                      onClick={async () => {
+                        const { ok, data } = await api.restoreRequest(req.id, currentUser?.id);
+                        if (ok) {
+                          onShowNotice("success", "Restored", data.message);
+                          fetchArchivedRequests();
+                        } else {
+                          onShowNotice("error", "Restore Failed", data.message);
+                        }
+                      }}
+                    >
+                      Restore Request
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </section>
@@ -544,7 +640,14 @@ const AdminDashboard = ({
                     <span style={{ fontSize: "0.9rem" }}>{asset.laptopStorage}</span>
                     <span style={{ fontSize: "0.9rem" }}>{asset.laptopGpu || "Integrated Graphics"}</span>
                     <span style={{ fontWeight: 600, color: "#334155" }}>
-                      {asset.assignedCount || 0} employee{asset.assignedCount === 1 ? "" : "s"}
+                      <button 
+                        type="button" 
+                        className="ghost-button" 
+                        style={{ padding: "4px 8px", fontSize: "0.8rem", border: "1px solid #cbd5e1" }}
+                        onClick={() => setViewingAssetAssignments(asset)}
+                      >
+                        {asset.assignedCount || 0} employee{asset.assignedCount === 1 ? "" : "s"} 🔍
+                      </button>
                     </span>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button type="button" className="action-button action-button-edit" style={{ flex: 1 }} onClick={() => { setEditingAsset({...asset}); setShowModal('edit-asset'); }}>Edit</button>
@@ -562,6 +665,59 @@ const AdminDashboard = ({
             </div>
           </div>
         </section>
+      )}
+
+      {viewingAssetAssignments && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ width: "600px" }}>
+            <div className="modal-topbar">
+              <div>
+                <h3>Asset Usage Details</h3>
+                <p><strong>Asset:</strong> {viewingAssetAssignments.assetCode} | <strong>Model:</strong> {viewingAssetAssignments.laptopModel}</p>
+              </div>
+              <button className="ghost-button" onClick={() => setViewingAssetAssignments(null)}>✕</button>
+            </div>
+            <div style={{ padding: "24px" }}>
+              <h4 style={{ marginBottom: "16px" }}>Assigned Employees</h4>
+              {!viewingAssetAssignments.assignments || viewingAssetAssignments.assignments.length === 0 ? (
+                <div style={{ padding: "20px", textAlign: "center", background: "#f8fafc", borderRadius: "12px", border: "1px dashed #cbd5e1", color: "#64748b" }}>
+                  No employees are currently assigned to this asset.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {viewingAssetAssignments.assignments.map((emp, idx) => (
+                    <div key={idx} style={{ padding: "16px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <div style={{ gridColumn: "span 2", marginBottom: "4px" }}>
+                        <strong style={{ fontSize: "1.1rem", color: "#102a43" }}>{emp.employeeName}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: "0.8rem", color: "#64748b", display: "block" }}>Employee Code</span>
+                        <strong>{emp.employeeCode}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: "0.8rem", color: "#64748b", display: "block" }}>Request ID</span>
+                        <strong>{emp.requestCode}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: "0.8rem", color: "#64748b", display: "block" }}>Department</span>
+                        <strong>{emp.department}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: "0.8rem", color: "#64748b", display: "block" }}>Status</span>
+                        <span className={`status-pill status-pill-${emp.stage.replace('_', '-')}`} style={{ fontSize: "0.75rem", padding: "2px 8px" }}>
+                          {emp.stage.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: "24px", display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" className="primary-button" onClick={() => setViewingAssetAssignments(null)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeTab === 'logs' && (

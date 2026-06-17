@@ -331,6 +331,14 @@ export function getStageMeta(stage) {
     };
   }
 
+  if (stage === "archived") {
+    return {
+      label: "Archived",
+      tone: "archived",
+      description: "Soft-deleted historical record",
+    };
+  }
+
   return {
     label: "Approved",
     tone: "approved",
@@ -459,22 +467,18 @@ export function requestBelongsToUserScope(request, user) {
   }
 
   if (role === "Infrastructure Admin") {
-    if (request.stage === workflowStages.infraAdmin) {
-      return !request.infraAdmin || sameUserId(request.infraAdmin.id, userId);
-    }
-    if ([workflowStages.infraExecutive, workflowStages.approved].includes(request.stage)) {
-      return request.infraAdmin && sameUserId(request.infraAdmin.id, userId);
-    }
+    // Visible if it's assigned to me (regardless of stage)
+    if (request.infraAdmin && sameUserId(request.infraAdmin.id, userId)) return true;
+    // OR if it's at my stage and unassigned
+    if (request.stage === workflowStages.infraAdmin && !request.infraAdmin) return true;
     return false;
   }
 
   if (role === "Infrastructure Executive") {
-    if (request.stage === workflowStages.infraExecutive) {
-      return request.infraExecutive && sameUserId(request.infraExecutive.id, userId);
-    }
-    if (request.stage === workflowStages.approved) {
-      return request.infraExecutive && sameUserId(request.infraExecutive.id, userId);
-    }
+    // Visible if it's assigned to me (regardless of stage)
+    if (request.infraExecutive && sameUserId(request.infraExecutive.id, userId)) return true;
+    // OR if it's at my stage and unassigned
+    if (request.stage === workflowStages.infraExecutive && !request.infraExecutive) return true;
     return false;
   }
 

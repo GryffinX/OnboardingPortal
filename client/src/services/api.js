@@ -112,11 +112,11 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async deleteUser(email, actorId) {
+  async deleteUser(email, actorId, archiveRequest = false) {
     const response = await fetch(`${apiBaseUrl}/api/delete-user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, actorId }),
+      body: JSON.stringify({ email, actorId, archiveRequest }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
@@ -162,8 +162,9 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async fetchRequests() {
-    const response = await fetch(`${apiBaseUrl}/api/requests`);
+  async fetchRequests(includeArchived = false) {
+    const query = includeArchived ? "?includeArchived=true" : "";
+    const response = await fetch(`${apiBaseUrl}/api/requests${query}`);
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };
   },
@@ -248,8 +249,18 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async deleteRequest(id, actorId) {
+  async deleteRequest(id, actorId, reason = "") {
     const response = await fetch(`${apiBaseUrl}/api/delete-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, actorId, reason }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async restoreRequest(id, actorId) {
+    const response = await fetch(`${apiBaseUrl}/api/restore-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, actorId }),

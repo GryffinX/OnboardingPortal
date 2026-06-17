@@ -26,6 +26,7 @@ def validate_gibberish(value):
         raise ValidationError("Input contains invalid or gibberish text. Please use more alphanumeric characters.")
         
     if re.search(r'([a-zA-Z0-9])\1{3,}', value):
+        print("GIBBERISH FAILING VALUE:", value)
         raise ValidationError("Input contains invalid or gibberish text (repeating characters).")
         
     words = re.split(r'[\s,.:;!?]+', value.lower())
@@ -59,8 +60,10 @@ def validate_phone_number(value):
 def validate_employee_code(value):
     if not value: return
     if not value.isdigit():
+        print("EMPLOYEE CODE NOT DIGIT:", repr(value))
         raise ValidationError("Employee Code must contain only digits.")
     if not re.match(r"^[1-9]\d{4}$", value):
+        print("EMPLOYEE CODE REGEX FAIL:", repr(value))
         raise ValidationError("Employee Code must be exactly 5 digits and cannot start with 0.")
 
 def validate_comment_text(value):
@@ -109,13 +112,13 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=50, db_index=True) # Admin, Manager, HOD, Employee
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True)
     phone_number = models.CharField(max_length=10, unique=True, validators=[validate_phone_number])
-    employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True, validators=[validate_generic_text])
+    employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True, validators=[validate_employee_code])
 
     def clean(self):
         if self.phone_number:
             validate_phone_number(self.phone_number)
         if self.employee_code:
-            validate_generic_text(self.employee_code)
+            validate_employee_code(self.employee_code)
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -221,6 +224,12 @@ class OnboardingRequest(models.Model):
     laptop_processor = models.CharField(max_length=100, blank=True, validators=[validate_generic_text])
     laptop_gpu = models.CharField(max_length=100, blank=True, default="Integrated Graphics", validators=[validate_generic_text])
     laptop_acknowledged = models.BooleanField(default=False)
+
+    # Soft Delete Fields
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="archived_requests")
+    delete_reason = models.TextField(blank=True)
 
     def clean(self):
         validate_employee_name(self.employee_name)

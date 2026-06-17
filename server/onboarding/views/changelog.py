@@ -112,6 +112,7 @@ def snapshot_request(req):
         "review_reason": req.review_reason,
         "review_requested_by": req.review_requested_by,
         "date_of_joining": req.date_of_joining,
+        "laptop_acknowledged": req.laptop_acknowledged,
     }
 
 
@@ -141,6 +142,11 @@ def describe_request_changes(before, req):
     _add_change(changes, "Employee Code", before["employee_code"], req.employee_code)
     _add_change(changes, "Asset Code", before["asset_code"], req.asset_code)
     _add_change(changes, "Date of Joining", before["date_of_joining"], req.date_of_joining)
+
+    old_ack = "Acknowledged" if before.get("laptop_acknowledged") else "Not Acknowledged"
+    new_ack = "Acknowledged" if req.laptop_acknowledged else "Not Acknowledged"
+    if old_ack != new_ack:
+        changes.append(f"Laptop Acknowledgement: '{old_ack}' → '{new_ack}'")
 
     old_manager_sw = _software_label(before["manager_software"])
     new_manager_sw = _software_label(req.manager_software)

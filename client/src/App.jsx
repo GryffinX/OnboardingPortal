@@ -557,13 +557,15 @@ function App() {
     }
   };
 
-  const handleDeleteUser = async (email) => {
-    const { ok, data } = await api.deleteUser(email, currentUser?.id);
+  const handleDeleteUser = async (email, archiveRequest = false) => {
+    const { ok, data } = await api.deleteUser(email, currentUser?.id, archiveRequest);
     if (ok) {
       showNotice("success", "User Deleted", data.message);
       setAllUsers(await fetchUsersData());
+      return { ok: true };
     } else {
       showNotice("error", "Failed to Delete User", data.message);
+      return { ok: false };
     }
   };
 
@@ -860,6 +862,7 @@ function App() {
                     onDeleteUser={handleDeleteUser}
                     onShowConfirm={setConfirmConfig}
                     onShowNotice={showNotice}
+                    onRefreshRequests={handleRefreshRequests}
                     apiBaseUrl={api.getBaseUrl()} 
                   />
                   <div ref={auditSectionRef}>

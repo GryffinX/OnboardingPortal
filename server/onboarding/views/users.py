@@ -474,25 +474,53 @@ def delete_user(request):
         return JsonResponse({"message": "Invalid JSON payload."}, status=400)
 
     email = payload.get("email")
+    archive_request = payload.get("archiveRequest", False)
+    actor_id = payload.get("actorId")
 
     if not email:
         return JsonResponse({"message": "Email is required to identify user."}, status=400)
 
     try:
-        user = User.objects.get(email=email)
-        user_name = f"{user.first_name} {user.last_name}".strip() or user.username
-        user.delete()
+        with transaction.atomic():
+            user = User.objects.select_related('profile').get(email=email)
+            user_name = f"{user.first_name} {user.last_name}".strip() or user.username
+            employee_code = ""
+            try:
+                employee_code = user.profile.employee_code or ""
+            except UserProfile.DoesNotExist:
+                pass
 
-        actor_id = payload.get("actorId")
-        if actor_id:
-            log_change(
-                actor_id,
-                "User Deleted",
-                f"Permanently removed account for {user_name} ({email})",
+            # Perform soft-delete/archival on associated requests if requested
+            from ..models import OnboardingRequest
+            from django.db.models import Q
+            from django.utils import timezone
+            
+            associated_requests = OnboardingRequest.objects.filter(
+                Q(personal_email=email) | Q(official_email=email)
             )
+            
+            archive_label = ""
+            if archive_request:
+                for req in associated_requests:
+                    if not req.is_deleted:
+                        req.is_deleted = True
+                        req.deleted_at = timezone.now()
+                        if actor_id:
+                            req.deleted_by = User.objects.filter(id=actor_id).first()
+                        req.save()
+                archive_label = " and archived associated request(s)"
 
-        return JsonResponse({"message": "User deleted successfully."})
+            # Hard delete the user account (this releases unique identifiers for reuse)
+            user.delete()
+
+            if actor_id:
+                action_type = "User Deleted"
+                description = f"Permanently removed account for {user_name} ({email}){archive_label}."
+                log_change(actor_id, action_type, description)
+
+            return JsonResponse({"message": f"User account deleted{archive_label} successfully."})
+            
     except User.DoesNotExist:
         return JsonResponse({"message": "User not found."}, status=404)
     except Exception as exc:
-        return JsonResponse({"message": "An internal server error occurred."}, status=500)
+        return JsonResponse({"message": f"An internal server error occurred: {str(exc)}"}, status=500)

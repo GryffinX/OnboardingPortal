@@ -43,6 +43,7 @@ function RequestDetailPanel({
   const [dateOfJoiningDraft, setDateOfJoiningDraft] = useState(() => request?.dateOfJoining || "");
   
   const [infraAdminCommentDraft, setInfraAdminCommentDraft] = useState(() => request?.infraAdminComment || "");
+  const [infraAdminDraft, setInfraAdminDraft] = useState(() => request?.infraAdmin?.id || "");
   const [infraExecutiveDraft, setInfraExecutiveDraft] = useState(() => request?.infraExecutive?.id || "");
   const [laptopModelDraft, setLaptopModelDraft] = useState(() => request?.laptopModel || "");
   const [laptopRamDraft, setLaptopRamDraft] = useState(() => request?.laptopRam || "");
@@ -57,7 +58,7 @@ function RequestDetailPanel({
   const [newInventoryAsset, setNewInventoryAsset] = useState({ assetCode: '', laptopModel: '', laptopProcessor: '', laptopRam: '', laptopStorage: '', laptopGpu: '' });
 
   useEffect(() => {
-    if (role === pages.infraExecutive) {
+    if (role === pages.infraExecutive || role === pages.admin) {
       const loadAssets = async () => {
         const { ok, data } = await api.getAssets();
         if (ok) setAssetInventory(data.assets || []);
@@ -66,10 +67,20 @@ function RequestDetailPanel({
     }
   }, [role]);
 
-  const filteredAssets = assetInventory.filter(a => 
-    (a.assetCode.toLowerCase().includes(assetSearch.toLowerCase()) || 
-     a.laptopModel.toLowerCase().includes(assetSearch.toLowerCase()))
-  );
+  useEffect(() => {
+    if (role === pages.admin && request?.assetCode) {
+      setAssetSearch(request.assetCode);
+    }
+  }, [role, request]);
+
+  const filteredAssets = assetInventory.filter(a => {
+    // If the search term is empty OR it matches the currently selected asset code exactly, 
+    // we show all assets (allowing the user to see the full list when they focus/click).
+    if (!assetSearch || assetSearch === assetCodeDraft) return true;
+    
+    return (a.assetCode.toLowerCase().includes(assetSearch.toLowerCase()) || 
+            a.laptopModel.toLowerCase().includes(assetSearch.toLowerCase()));
+  });
 
   const handleSelectAsset = (asset) => {
     setAssetCodeDraft(asset.assetCode);
@@ -105,6 +116,8 @@ function RequestDetailPanel({
 
   const [adminEmpCodeDraft, setAdminEmpCodeDraft] = useState(() => request?.employeeCode || "");
   const [adminAssetCodeDraft, setAdminAssetCodeDraft] = useState(() => request?.assetCode || "");
+
+  const [assetCodeError, setAssetCodeError] = useState("");
 
   const handleSaveAdminOverrides = () => {
     onSaveSoftware?.(request.id, [], pages.admin, {
@@ -179,8 +192,13 @@ function RequestDetailPanel({
         return;
       }
     }
+    if (!infraAdminDraft) {
+      onShowNotice?.("error", "Validation Error", "Please assign an Infrastructure Admin.");
+      return;
+    }
     onSaveSoftware?.(request.id, [], role, {
       hodComment: hodCommentDraft,
+      infraAdminId: infraAdminDraft,
     });
   };
 
@@ -211,7 +229,15 @@ function RequestDetailPanel({
         return;
       }
       if (hodCommentDraft && hodCommentDraft !== request.hodComment) {
-        onShowNotice?.("error", "Validation Error", "Please click 'Save Comment' before approving.");
+        onShowNotice?.("error", "Validation Error", "Please click 'Save Assignment & Comment' before approving.");
+        return;
+      }
+      if (!request.infraAdmin && !infraAdminDraft) {
+        onShowNotice?.("error", "Validation Error", "An Infrastructure Admin assignment is required.");
+        return;
+      }
+      if (infraAdminDraft && String(infraAdminDraft) !== String(request.infraAdmin?.id || "")) {
+        onShowNotice?.("error", "Validation Error", "Please click 'Save Assignment & Comment' before approving.");
         return;
       }
     }
@@ -249,78 +275,106 @@ function RequestDetailPanel({
 
   const displayAssetCodeError = request?.assetCode ? "" : assetCodeError;
 
+  const linkedUserExists = allUsers.some((user) => {
+    const userEmail = (user.email || "").toLowerCase();
+    return userEmail === (request.formData?.personalEmail || "").toLowerCase() || 
+           userEmail === (request.officialEmail || "").toLowerCase();
+  });
+
+  const isWorkflowActive = ["manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"].includes(request.stage);
+  const canArchive = !linkedUserExists && !isWorkflowActive && (request.stage === "approved" || request.stage === "stopped");
+
   return (
     <aside className="detail-panel">
       <div className="detail-top">
         <div>
-          <h3>{request.formData.name}</h3>
-          <p>{request.requestCode} {request.employeeCode ? `| ${request.employeeCode}` : ""}</p>
+          <h3>{request?.formData?.name || "Unknown"}</h3>
+          <p>{request?.requestCode} {request?.employeeCode ? `| ${request?.employeeCode}` : ""}</p>
         </div>
-        <span className={`status-pill status-pill-${stageMeta.tone}`}>
-          {stageMeta.label}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {role === pages.admin && (
+            <button
+              type="button"
+              className="action-button action-button-delete"
+              style={{ opacity: canArchive ? 1 : 0.5, cursor: canArchive ? "pointer" : "not-allowed" }}
+              disabled={!canArchive}
+              title={
+                linkedUserExists ? "Delete the linked user account first." :
+                isWorkflowActive ? "Stop the active workflow first." :
+                !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be archived." :
+                "Archive this request"
+              }
+              onClick={() => onShowNotice?.("info", "Archive Request", "Please use the 'Stop Case' or 'Delete User' workflow to initiate archival.")}
+            >
+              Archive Request
+            </button>
+          )}
+          <span className={`status-pill status-pill-${stageMeta.tone}`}>
+            {stageMeta.label}
+          </span>
+        </div>
       </div>
 
       <div className="detail-grid">
         <div>
           <span>Employee Code</span>
-          <strong>{request.employeeCode || "N/A"}</strong>
+          <strong>{request?.employeeCode || "N/A"}</strong>
         </div>
         <div>
           <span>Date of Joining</span>
-          <strong>{request.dateOfJoining || "N/A"}</strong>
+          <strong>{request?.dateOfJoining || "N/A"}</strong>
         </div>
         <div>
           <span>Phone Number</span>
-          <strong>{request.formData.employeePhoneNumber || "N/A"}</strong>
+          <strong>{request?.formData?.employeePhoneNumber || "N/A"}</strong>
         </div>
         <div>
           <span>Personal Email</span>
-          <strong>{request.formData.personalEmail || "N/A"}</strong>
+          <strong>{request?.formData?.personalEmail || "N/A"}</strong>
         </div>
         <div>
           <span>Proposed Official Email</span>
-          <strong>{request.officialEmail || "N/A"}</strong>
+          <strong>{request?.officialEmail || "N/A"}</strong>
         </div>
         <div>
           <span>Line Manager</span>
-          <strong>{request.formData.lineManager || "N/A"} {request.formData.lineManagerCode ? `(${request.formData.lineManagerCode})` : ""}</strong>
+          <strong>{request?.formData?.lineManager || "N/A"} {request?.formData?.lineManagerCode ? `(${request?.formData?.lineManagerCode})` : ""}</strong>
         </div>
         <div>
           <span>HOD Name</span>
-          <strong>{request.formData.hod || "N/A"} {request.formData.hodCode ? `(${request.formData.hodCode})` : ""}</strong>
+          <strong>{request?.formData?.hod || "N/A"} {request?.formData?.hodCode ? `(${request?.formData?.hodCode})` : ""}</strong>
         </div>
         <div>
           <span>Infra Admin Name</span>
-          <strong>{request.infraAdmin?.name || "N/A"} {request.infraAdmin?.employeeCode ? `(${request.infraAdmin.employeeCode})` : ""}</strong>
+          <strong>{request?.infraAdmin?.name || "N/A"} {request?.infraAdmin?.employeeCode ? `(${request?.infraAdmin.employeeCode})` : ""}</strong>
         </div>
         <div>
           <span>Infra Executive Name</span>
-          <strong>{request.infraExecutive?.name || "N/A"} {request.infraExecutive?.employeeCode ? `(${request.infraExecutive.employeeCode})` : ""}</strong>
+          <strong>{request?.infraExecutive?.name || "N/A"} {request?.infraExecutive?.employeeCode ? `(${request?.infraExecutive.employeeCode})` : ""}</strong>
         </div>
         <div>
           <span>Department</span>
-          <strong>{request.formData.department || "N/A"}</strong>
+          <strong>{request?.formData?.department || "N/A"}</strong>
         </div>
         <div>
           <span>Revision Count</span>
-          <strong>{request.revisionCount}</strong>
+          <strong>{request?.revisionCount}</strong>
         </div>
         <div>
           <span>Asset Code</span>
           <strong style={displayAssetCodeError ? { color: "#ef4444" } : {}}>
-            {request.assetCode || "N/A"}
+            {request?.assetCode || "N/A"}
           </strong>
         </div>
         {!isEmployee && (
           <>
             <div>
               <span>HOD Comment</span>
-              <strong>{request.hodComment || "No Comment"}</strong>
+              <strong>{request?.hodComment || "No Comment"}</strong>
             </div>
             <div>
               <span>Infra Admin Comment</span>
-              <strong>{request.infraAdminComment || "No Comment"}</strong>
+              <strong>{request?.infraAdminComment || "No Comment"}</strong>
             </div>
           </>
         )}
@@ -329,52 +383,59 @@ function RequestDetailPanel({
       <SoftwareSection
         title="Pre-installed on company laptop"
         tone="blue"
-        items={request.preInstalledSoftware}
+        items={request?.preInstalledSoftware}
       />
 
       <SoftwareSection
         title="To be installed by employee"
         tone="yellow"
-        items={request.employeeInstalledSoftware}
+        items={request?.employeeInstalledSoftware}
       />
 
       <SoftwareSection
         title="Software listed by Line Manager"
-        tone="orange"
-        items={request.managerSoftware}
-        headerLabel={request.formData.lineManager}
+        tone="pending"
+        items={request?.managerSoftware}
+        headerLabel={request?.formData?.lineManager}
       />
 
-      {request.laptopModel && (
-        <section className="software-input-card" style={{ borderTop: "2px solid #10b981", background: "#f0fdf4" }}>
+      <SoftwareSection
+        title="Software added/edited by Infrastructure Admin"
+        tone="infra-admin"
+        items={request?.infraSoftware}
+        headerLabel={request?.infraAdmin?.name}
+      />
+
+      {request?.laptopModel && (
+        <section className="software-input-card" style={{ borderTop: "2px solid #7e22ce", background: "#f3e8ff" }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h4 style={{ margin: 0 }}>Assigned Hardware Specifications</h4>
-            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#15803d', padding: '4px 10px', textTransform: 'uppercase'}}>
-              {request.infraExecutive?.name || "N/A"}
+            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#7e22ce', padding: '4px 10px', textTransform: 'uppercase'}}>
+              {request?.infraExecutive?.name || "N/A"}
             </span>
           </div>
           <p>Details of the laptop assigned by the Infrastructure team.</p>
           <div className="detail-grid" style={{ marginTop: "16px", borderBottom: "none", paddingBottom: 0 }}>
-            <div><span>Laptop Model</span><strong>{request.laptopModel}</strong></div>
-            <div><span>Processor</span><strong>{request.laptopProcessor}</strong></div>
-            <div><span>RAM</span><strong>{request.laptopRam}</strong></div>
-            <div><span>Storage</span><strong>{request.laptopStorage}</strong></div>
-            <div><span>GPU</span><strong>{request.laptopGpu || "Integrated Graphics"}</strong></div>
+            <div><span>Laptop Model</span><strong>{request?.laptopModel}</strong></div>
+            <div><span>Processor</span><strong>{request?.laptopProcessor}</strong></div>
+            <div><span>RAM</span><strong>{request?.laptopRam}</strong></div>
+            <div><span>Storage</span><strong>{request?.laptopStorage}</strong></div>
+            <div><span>GPU</span><strong>{request?.laptopGpu || "Integrated Graphics"}</strong></div>
           </div>
-          {isEmployee && !request.laptopAcknowledged && (
+          {isEmployee && !request?.laptopAcknowledged && (
             <div className="detail-actions" style={{ marginTop: "24px" }}>
               <button 
                 type="button" 
                 className="primary-button" 
-                style={{ background: "#10b981", width: "100%" }}
+                style={{ background: "#7e22ce", width: "100%" }}
                 onClick={() => onAcknowledgeLaptop?.(request.id)}
               >
                 Acknowledge Receipt of Laptop
               </button>
             </div>
           )}
-          {request.laptopAcknowledged && (
-            <div style={{ marginTop: "16px", padding: "12px", background: "#dcfce7", color: "#166534", borderRadius: "8px", textAlign: "center", fontWeight: "600" }}>
+          {request?.laptopAcknowledged && (
+            <div style={{ marginTop: "16px", padding: "12px", background: "#f3e8ff", color: "#7e22ce", borderRadius: "8px", textAlign: "center", fontWeight: "600", border: "1px solid #7e22ce" }}>
               ✓ Laptop receipt acknowledged.
             </div>
           )}
@@ -392,21 +453,71 @@ function RequestDetailPanel({
                 type="text"
                 className="dashboard-search"
                 value={adminEmpCodeDraft}
-                onChange={(e) => setAdminEmpCodeDraft(cleanNumericInput(e.target.value, 4))}
-                placeholder="1001"
-                maxLength={4}
+                onChange={(e) => setAdminEmpCodeDraft(cleanNumericInput(e.target.value, 5))}
+                placeholder="10001"
+                maxLength={5}
               />
             </div>
-            <div className="form-group">
+            <div className="form-group" style={{ position: "relative" }}>
               <label>Asset Code</label>
               <input
                 type="text"
                 className="dashboard-search"
-                value={adminAssetCodeDraft}
-                onChange={(e) => setAdminAssetCodeDraft(cleanTextInput(e.target.value, 20))}
-                placeholder="LP-XXX"
-                maxLength={20}
+                style={{ width: "100%", paddingRight: "40px" }}
+                value={assetSearch}
+                onChange={(e) => {
+                  setAssetSearch(e.target.value);
+                  setIsAssetDropdownOpen(true);
+                  if (!e.target.value) setAdminAssetCodeDraft("");
+                }}
+                onFocus={() => setIsAssetDropdownOpen(true)}
+                placeholder="Search inventory..."
               />
+              <button 
+                type="button" 
+                className="ghost-button" 
+                style={{ position: "absolute", right: "8px", top: "32px", padding: "4px" }}
+                onClick={() => setIsAssetDropdownOpen(!isAssetDropdownOpen)}
+              >
+                {isAssetDropdownOpen ? "▲" : "▼"}
+              </button>
+
+              {isAssetDropdownOpen && (
+                <div style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  zIndex: 100,
+                  background: "#fff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                  maxHeight: "250px",
+                  overflowY: "auto",
+                  marginTop: "4px"
+                }}>
+                  {filteredAssets.length === 0 ? (
+                    <div style={{ padding: "12px", color: "#64748b", textAlign: "center" }}>No matching assets found.</div>
+                  ) : (
+                    filteredAssets.map(asset => (
+                      <div 
+                        key={asset.id} 
+                        style={{ padding: "10px 16px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", background: asset.assetCode === adminAssetCodeDraft ? "#eff6ff" : "transparent" }}
+                        onClick={() => {
+                          setAdminAssetCodeDraft(asset.assetCode);
+                          setAssetSearch(asset.assetCode);
+                          setIsAssetDropdownOpen(false);
+                        }}
+                        className="asset-option-hover"
+                      >
+                        <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>{asset.assetCode}</div>
+                        <div style={{ fontSize: "0.8rem", color: "#64748b" }}>{asset.laptopModel}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div className="detail-actions detail-actions-compact" style={{ marginTop: "16px" }}>
@@ -426,13 +537,13 @@ function RequestDetailPanel({
         <section className="software-input-card">
           <h4>
             {role === pages.manager ? "Add/Edit Software List" : 
-             role === pages.hod ? "Add comments" : 
+             role === pages.hod ? "Add Assignment & Comment" : 
              role === pages.infraAdmin ? "Assign Infrastructure Executive" : 
              role === pages.infraExecutive ? "Assign Hardware Specifications" : ""}
           </h4>
           <p>
             {role === pages.manager ? "List any additional software needed and the date of joining for this employee." : 
-             role === pages.hod ? "Add a comment for approval." : 
+             role === pages.hod ? "Provide instructions and assign an Infrastructure Admin." : 
              role === pages.infraAdmin ? "Provide instructions and assign an executive for hardware provisioning." : 
              role === pages.infraExecutive ? "Enter the specifications of the assigned laptop." : ""}
           </p>
@@ -470,6 +581,27 @@ function RequestDetailPanel({
 
           {role === pages.hod && (
             <>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "0.85rem", fontWeight: "600", color: "#475569" }}>
+                  Infrastructure Admin
+                </label>
+                <select
+                  className="dashboard-search"
+                  value={infraAdminDraft}
+                  onChange={(e) => setInfraAdminDraft(e.target.value)}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">-- Select Infra Admin --</option>
+                  {allUsers
+                    .filter(u => u.role === "Infrastructure Admin" && u.isActive)
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} {u.employeeCode ? `(${u.employeeCode})` : ""}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
               <textarea
                 value={hodCommentDraft}
                 onChange={(event) => setHodCommentDraft(cleanCommentInput(event.target.value, 500))}
@@ -482,7 +614,7 @@ function RequestDetailPanel({
                   className="secondary-button"
                   onClick={handleSaveHodComment}
                 >
-                  Save Comment
+                  Save Assignment & Comment
                 </button>
               </div>
             </>
@@ -512,17 +644,6 @@ function RequestDetailPanel({
                     onChange={(e) => setAdminEmpCodeDraft(cleanNumericInput(e.target.value, 5))}
                     placeholder="Auto-generated if blank"
                     maxLength={5}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Asset Code</label>
-                  <input
-                    type="text"
-                    className="dashboard-search"
-                    value={assetCodeDraft}
-                    onChange={(event) => setAssetCodeDraft(cleanTextInput(event.target.value, 20))}
-                    placeholder="Asset code"
-                    maxLength={20}
                   />
                 </div>
               </div>
@@ -623,15 +744,15 @@ function RequestDetailPanel({
                       <div style={{ padding: "12px", color: "#64748b", textAlign: "center" }}>No matching assets found.</div>
                     ) : (
                       filteredAssets.map(asset => (
-                        <div 
-                          key={asset.id} 
-                          style={{ padding: "10px 16px", cursor: "pointer", borderBottom: "1px solid #f1f5f9" }}
-                          onClick={() => handleSelectAsset(asset)}
-                          className="asset-option-hover"
-                        >
-                          <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>{asset.assetCode} {asset.isAssigned ? "(Already Assigned)" : ""}</div>
-                          <div style={{ fontSize: "0.8rem", color: "#64748b" }}>{asset.laptopModel} | {asset.laptopProcessor} | {asset.laptopRam} | {asset.laptopStorage}</div>
-                        </div>
+                      <div 
+                        key={asset.id} 
+                        style={{ padding: "10px 16px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", background: asset.assetCode === assetCodeDraft ? "#eff6ff" : "transparent" }}
+                        onClick={() => handleSelectAsset(asset)}
+                        className="asset-option-hover"
+                      >
+                        <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>{asset.assetCode}</div>
+                        <div style={{ fontSize: "0.8rem", color: "#64748b" }}>{asset.laptopModel} | {asset.laptopProcessor} | {asset.laptopRam} | {asset.laptopStorage}</div>
+                      </div>
                       ))
                     )}
                   </div>

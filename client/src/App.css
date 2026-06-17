@@ -537,8 +537,8 @@
 }
 
 .status-pill-admin {
-  background: #fef3c7;
-  color: #92400e;
+  background: #334155;
+  color: #f8fafc;
 }
 
 .status-pill-manager {
@@ -569,6 +569,12 @@
 .status-pill-approved {
   background: #dcfce7;
   color: #166534;
+}
+
+.status-pill-archived {
+  background: #d6b38a;
+  color: #6b3e26;
+  border: 1px solid #8b5a2b;
 }
 
 .status-pill-infra-admin {
@@ -667,6 +673,18 @@
 .software-input-card p {
   margin: 0;
   line-height: 1.6;
+}
+
+.software-card-pending {
+  background: linear-gradient(135deg, #dbeafe, #eff6ff);
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.software-card-infra-admin {
+  background: linear-gradient(135deg, #ecfeff, #cffafe);
+  color: #0e7490;
+  border: 1px solid #a5f3fc;
 }
 
 .software-card-blue {
