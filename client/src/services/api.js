@@ -249,11 +249,21 @@ export const api = {
     return { ok: response.ok, data };
   },
 
-  async deleteRequest(id, actorId, reason = "") {
-    const response = await fetch(`${apiBaseUrl}/api/delete-request`, {
+  async archiveRequest(id, actorId, reason = "") {
+    const response = await fetch(`${apiBaseUrl}/api/archive-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, actorId, reason }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async deleteRequest(id, actorId) {
+    const response = await fetch(`${apiBaseUrl}/api/delete-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, actorId }),
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, data };

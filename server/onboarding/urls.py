@@ -36,4 +36,6 @@ urlpatterns = [
     path("update-asset", requests.update_asset, name="update-asset"),
     path("delete-asset", requests.delete_asset, name="delete-asset"),
     path("delete-request", requests.delete_request, name="delete-request"),
+    path("archive-request", requests.archive_request, name="archive-request"),
+    path("restore-request", requests.restore_request, name="restore-request"),
 ]

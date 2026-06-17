@@ -891,16 +891,34 @@ function App() {
                           showNotice("error", "Error", data.message || "Failed to acknowledge laptop receipt.");
                         }
                       }}
+                      onArchiveRequest={(id) => {
+                        setConfirmConfig({
+                          title: "Archive Onboarding Request?",
+                          message: "This will move the request to 'Archived Requests'. It will be hidden from operational views but can be restored later.",
+                          confirmLabel: "Archive Request",
+                          tone: "primary",
+                          onConfirm: async () => {
+                            const { ok, data } = await api.archiveRequest(id, currentUser?.id);
+                            if (ok) {
+                              showNotice("success", "Archived", data.message || "Request archived successfully.");
+                              handleRefreshRequests();
+                              setSelectedRequestId(null);
+                            } else {
+                              showNotice("error", "Error", data.message || "Failed to archive request.");
+                            }
+                          }
+                        });
+                      }}
                       onDeleteRequest={(id) => {
                         setConfirmConfig({
-                          title: "Delete Stopped Request?",
-                          message: "This will permanently remove the stopped onboarding request. The linked user account must already be deleted separately.",
-                          confirmLabel: "Delete Request",
+                          title: "Permanently Delete Request?",
+                          message: "CRITICAL: This will PERMANENTLY remove this record from the database. This action CANNOT be undone. Proceed with extreme caution.",
+                          confirmLabel: "Delete Permanently",
                           tone: "danger",
                           onConfirm: async () => {
                             const { ok, data } = await api.deleteRequest(id, currentUser?.id);
                             if (ok) {
-                              showNotice("success", "Deleted", data.message || "Stopped request removed permanently.");
+                              showNotice("success", "Deleted", data.message || "Request removed permanently.");
                               handleRefreshRequests();
                               setAllUsers(await fetchUsersData());
                               setSelectedRequestId(null);

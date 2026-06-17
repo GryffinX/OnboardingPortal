@@ -624,7 +624,7 @@ def get_changelogs(request):
 @csrf_exempt
 @admin_required
 @require_http_methods(["POST"])
-def delete_request(request):
+def archive_request(request):
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
         request_id = payload.get("id")
@@ -656,8 +656,6 @@ def delete_request(request):
             # Perform SOFT DELETE
             record.is_deleted = True
             record.deleted_at = datetime.now()
-            # Storing previous stage is technically redundant since we just check record.stage, 
-            # but we'll add it to the delete_reason just in case it's needed for audit context.
             if actor_id:
                 record.deleted_by = User.objects.filter(id=actor_id).first()
             
@@ -677,6 +675,54 @@ def delete_request(request):
                 )
 
             return JsonResponse({"ok": True, "message": "Onboarding request has been archived successfully."})
+            
+    except OnboardingRequest.DoesNotExist:
+        return JsonResponse({"message": "Request not found."}, status=404)
+    except Exception as exc:
+        return JsonResponse({"message": f"An internal server error occurred: {str(exc)}"}, status=500)
+
+@csrf_exempt
+@admin_required
+@require_http_methods(["POST"])
+def delete_request(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        request_id = payload.get("id")
+        actor_id = payload.get("actorId")
+        
+        if not request_id:
+            return JsonResponse({"message": "Request ID is required."}, status=400)
+            
+        with transaction.atomic():
+            record = OnboardingRequest.objects.get(id=request_id)
+            req_code = record.request_code
+            emp_name = record.employee_name
+            
+            # 1. Active workflow check
+            active_workflow_stages = {"manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"}
+            if record.stage in active_workflow_stages:
+                return JsonResponse({"message": "Active workflow requests cannot be deleted permanently. Stop the request first."}, status=400)
+
+            # 2. Linked user account check
+            from django.contrib.auth.models import User
+            from django.db.models import Q
+            user_exists = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).exists()
+            if user_exists:
+                return JsonResponse({"message": "Delete the linked user account first before deleting this request."}, status=400)
+
+            # 3. Status check (Must be Approved or Stopped)
+            if record.stage not in ["approved", "stopped"]:
+                return JsonResponse({"message": "Only Approved or Stopped requests can be deleted permanently."}, status=400)
+
+            if actor_id:
+                log_change(
+                    actor_id,
+                    "Request Deleted",
+                    f"Permanently deleted request {req_code} for {emp_name}",
+                )
+
+            record.delete()
+            return JsonResponse({"ok": True, "message": "Onboarding request deleted permanently."})
             
     except OnboardingRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found."}, status=404)

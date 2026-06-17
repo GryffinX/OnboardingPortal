@@ -34,6 +34,7 @@ function RequestDetailPanel({
   onStartHrEdit,
   onStopCase,
   onDeleteRequest,
+  onArchiveRequest,
   onShowNotice,
   onAcknowledgeLaptop,
 }) {
@@ -152,6 +153,15 @@ function RequestDetailPanel({
       </aside>
     );
   }
+
+  const linkedUserExists = allUsers.some((user) => {
+    const userEmail = (user.email || "").toLowerCase();
+    return userEmail === (request.formData?.personalEmail || "").toLowerCase() || 
+           userEmail === (request.officialEmail || "").toLowerCase();
+  });
+
+  const isWorkflowActive = ["manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"].includes(request.stage);
+  const canActOnRequest = !linkedUserExists && !isWorkflowActive && (request.stage === "approved" || request.stage === "stopped");
 
   const stageMeta = getStageMeta(request.stage);
   const isManagerStep = role === pages.manager && request.stage === workflowStages.manager;
@@ -275,15 +285,6 @@ function RequestDetailPanel({
 
   const displayAssetCodeError = request?.assetCode ? "" : assetCodeError;
 
-  const linkedUserExists = allUsers.some((user) => {
-    const userEmail = (user.email || "").toLowerCase();
-    return userEmail === (request.formData?.personalEmail || "").toLowerCase() || 
-           userEmail === (request.officialEmail || "").toLowerCase();
-  });
-
-  const isWorkflowActive = ["manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"].includes(request.stage);
-  const canArchive = !linkedUserExists && !isWorkflowActive && (request.stage === "approved" || request.stage === "stopped");
-
   return (
     <aside className="detail-panel">
       <div className="detail-top">
@@ -293,21 +294,38 @@ function RequestDetailPanel({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           {role === pages.admin && (
-            <button
-              type="button"
-              className="action-button action-button-delete"
-              style={{ opacity: canArchive ? 1 : 0.5, cursor: canArchive ? "pointer" : "not-allowed" }}
-              disabled={!canArchive}
-              title={
-                linkedUserExists ? "Delete the linked user account first." :
-                isWorkflowActive ? "Stop the active workflow first." :
-                !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be archived." :
-                "Archive this request"
-              }
-              onClick={() => onShowNotice?.("info", "Archive Request", "Please use the 'Stop Case' or 'Delete User' workflow to initiate archival.")}
-            >
-              Archive Request
-            </button>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className="action-button action-button-edit"
+                style={{ opacity: canActOnRequest ? 1 : 0.5, cursor: canActOnRequest ? "pointer" : "not-allowed" }}
+                disabled={!canActOnRequest}
+                title={
+                  linkedUserExists ? "Delete the linked user account first." :
+                  isWorkflowActive ? "Stop the active workflow first." :
+                  !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be archived." :
+                  "Archive this request"
+                }
+                onClick={() => onArchiveRequest?.(request.id)}
+              >
+                Archive
+              </button>
+              <button
+                type="button"
+                className="action-button action-button-delete"
+                style={{ opacity: canActOnRequest ? 1 : 0.5, cursor: canActOnRequest ? "pointer" : "not-allowed" }}
+                disabled={!canActOnRequest}
+                title={
+                  linkedUserExists ? "Delete the linked user account first." :
+                  isWorkflowActive ? "Stop the active workflow first." :
+                  !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be deleted permanently." :
+                  "Permanently delete this request"
+                }
+                onClick={() => onDeleteRequest?.(request.id)}
+              >
+                Delete
+              </button>
+            </div>
           )}
           <span className={`status-pill status-pill-${stageMeta.tone}`}>
             {stageMeta.label}
@@ -929,19 +947,6 @@ function RequestDetailPanel({
       {!canAct && !isHrStep ? (
         <p className="detail-note">{stageMeta.description}</p>
       ) : null}
-
-      {role === pages.admin && onDeleteRequest && (
-        <div className="detail-actions" style={{ marginTop: "24px", borderTop: "1px solid #e2e8f0", paddingTop: "24px" }}>
-          <button 
-            type="button" 
-            className="warning-button" 
-            style={{ width: "100%", background: "#ef4444" }}
-            onClick={() => onDeleteRequest(request.id)}
-          >
-            Delete Permanently from Database
-          </button>
-        </div>
-      )}
 
       {showNewAssetModal && (
         <div className="modal-backdrop">

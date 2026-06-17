@@ -466,21 +466,48 @@ const AdminDashboard = ({
                       </span>
                     </div>
                     <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{req.lastUpdated}</span>
-                    <button 
-                      type="button" 
-                      className="action-button action-button-edit" 
-                      onClick={async () => {
-                        const { ok, data } = await api.restoreRequest(req.id, currentUser?.id);
-                        if (ok) {
-                          onShowNotice("success", "Restored", data.message);
-                          fetchArchivedRequests();
-                        } else {
-                          onShowNotice("error", "Restore Failed", data.message);
-                        }
-                      }}
-                    >
-                      Restore Request
-                    </button>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button 
+                        type="button" 
+                        className="action-button action-button-edit" 
+                        style={{ flex: 1 }}
+                        onClick={async () => {
+                          const { ok, data } = await api.restoreRequest(req.id, currentUser?.id);
+                          if (ok) {
+                            onShowNotice("success", "Restored", data.message);
+                            fetchArchivedRequests();
+                            onRefreshRequests?.();
+                          } else {
+                            onShowNotice("error", "Restore Failed", data.message);
+                          }
+                        }}
+                      >
+                        Restore
+                      </button>
+                      <button 
+                        type="button" 
+                        className="action-button action-button-delete" 
+                        style={{ flex: 1 }}
+                        onClick={() => onShowConfirm({
+                          title: "Permanently Delete Archived Request?",
+                          message: `CRITICAL: This will PERMANENTLY remove the archived request for "${req.formData.name}" from the database. This cannot be undone.`,
+                          confirmLabel: "Delete Permanently",
+                          tone: "danger",
+                          onConfirm: async () => {
+                            const { ok, data } = await api.deleteRequest(req.id, currentUser?.id);
+                            if (ok) {
+                              onShowNotice("success", "Deleted", data.message || "Archived record removed permanently.");
+                              fetchArchivedRequests();
+                              onRefreshRequests?.();
+                            } else {
+                              onShowNotice("error", "Error", data.message || "Failed to delete archived request.");
+                            }
+                          }
+                        })}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
