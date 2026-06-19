@@ -331,16 +331,20 @@ function ProfileDashboard({ user, request, onUpdateProfile, onShowNotice }) {
 
           <SoftwareSection
             title="Software listed by Manager"
-            tone="orange"
+            tone="pending"
             items={request.managerSoftware}
             headerLabel={request.formData.lineManager}
+            emptyMessage="No additional software requested by manager."
+            showWhenEmpty
           />
 
           <SoftwareSection
             title="Software listed by Infrastructure Admin"
-            tone="cyan"
+            tone="infra-admin"
             items={request.infraSoftware}
             headerLabel={request.infraAdmin?.name}
+            emptyMessage="No additional software added by Infrastructure Admin."
+            showWhenEmpty
           />
         </section>
       )}
@@ -502,7 +506,7 @@ function App() {
 
   const handleRefreshRequests = async () => {
     try {
-      const { ok, data } = await api.fetchRequests();
+      const { ok, data } = await api.fetchRequests(true);
       if (ok && data && Array.isArray(data.requests)) {
         setRequests(data.requests.map((r, idx) => normalizeRequestRecord(r, idx + 1)));
       }
@@ -683,12 +687,13 @@ function App() {
       ...overrides,
     };
 
-    if (role === pages.manager || role === pages.infraAdmin) {
+    if (role === pages.manager) {
       payload.managerSoftware = softwareList;
-    }
-
-    if (role === pages.infraAdmin && currentUser?.id) {
-      payload.infraAdminId = currentUser.id;
+    } else if (role === pages.infraAdmin) {
+      payload.infraSoftware = softwareList;
+      if (currentUser?.id) {
+        payload.infraAdminId = currentUser.id;
+      }
     }
 
     const saveActionTypes = {
@@ -723,9 +728,9 @@ function App() {
 
     if (usesGlobalTabs) {
       const wipCount = userFilteredRequests.filter((r) =>
-        [workflowStages.manager, workflowStages.hod, workflowStages.hr, workflowStages.infraAdmin, workflowStages.infraExecutive].includes(r.stage),
+        !r.isDeleted && [workflowStages.manager, workflowStages.hod, workflowStages.hr, workflowStages.infraAdmin, workflowStages.infraExecutive].includes(r.stage),
       ).length;
-      const hrCount = userFilteredRequests.filter((r) => r.stage === workflowStages.hr).length;
+      const hrCount = userFilteredRequests.filter((r) => !r.isDeleted && r.stage === workflowStages.hr).length;
 
       return {
         tabs: globalQueueFilters.map((tab) => ({
@@ -768,7 +773,7 @@ function App() {
       }
     }
 
-    let filtered = userFilteredRequests;
+    let filtered = userFilteredRequests.filter((r) => !r.isDeleted);
     if (filterKey) {
       filtered = applyQueueTabFilter(filtered, filterKey, {
         user: currentUser,
@@ -784,7 +789,9 @@ function App() {
     if (!selectedRequestId) return;
     const selectedVisible = visibleRequests.some((request) => request.id === selectedRequestId);
     if (!selectedVisible) {
-      setSelectedRequestId(null);
+      Promise.resolve().then(() => {
+        setSelectedRequestId(null);
+      });
     }
   }, [selectedRequestId, visibleRequests]);
 
@@ -998,6 +1005,43 @@ function App() {
                   onSearchChange={setSearchTerm}
                   getQueueTitle={getQueueTitle}
                   getQueueSubtitle={getQueueSubtitle}
+                  onDeleteRequest={(id) => {
+                    setConfirmConfig({
+                      title: "Permanently Delete Request?",
+                      message: "CRITICAL: This will PERMANENTLY remove this record from the database. This action CANNOT be undone. Proceed with extreme caution.",
+                      confirmLabel: "Delete Permanently",
+                      tone: "danger",
+                      onConfirm: async () => {
+                        const { ok, data } = await api.deleteRequest(id, currentUser?.id);
+                        if (ok) {
+                          showNotice("success", "Deleted", data.message || "Request removed permanently.");
+                          handleRefreshRequests();
+                          setAllUsers(await fetchUsersData());
+                          setSelectedRequestId(null);
+                        } else {
+                          showNotice("error", "Error", data.message || "Failed to delete request.");
+                        }
+                      }
+                    });
+                  }}
+                  onArchiveRequest={(id) => {
+                    setConfirmConfig({
+                      title: "Archive Onboarding Request?",
+                      message: "This will move the request to 'Archived Requests'. It will be hidden from operational views but can be restored later.",
+                      confirmLabel: "Archive Request",
+                      tone: "primary",
+                      onConfirm: async () => {
+                        const { ok, data } = await api.archiveRequest(id, currentUser?.id);
+                        if (ok) {
+                          showNotice("success", "Archived", data.message || "Request archived successfully.");
+                          handleRefreshRequests();
+                          setSelectedRequestId(null);
+                        } else {
+                          showNotice("error", "Error", data.message || "Failed to archive request.");
+                        }
+                      }
+                    });
+                  }}
                 />
               )}
 
@@ -1087,6 +1131,43 @@ function App() {
                         const { ok, data } = await enhancedSaveRequest({ id, stage: workflowStages.stopped, stopReason: reason }, "Stopped Case");
                         if (ok) { showNotice("error", "Stopped", "Onboarding case has been stopped."); setSelectedRequestId(null); handleRefreshRequests(); }
                         else { showNotice("error", "Error", data?.message || "Failed to stop case."); }
+                      }}
+                      onArchiveRequest={(id) => {
+                        setConfirmConfig({
+                          title: "Archive Onboarding Request?",
+                          message: "This will move the request to 'Archived Requests'. It will be hidden from operational views but can be restored later.",
+                          confirmLabel: "Archive Request",
+                          tone: "primary",
+                          onConfirm: async () => {
+                            const { ok, data } = await api.archiveRequest(id, currentUser?.id);
+                            if (ok) {
+                              showNotice("success", "Archived", data.message || "Request archived successfully.");
+                              handleRefreshRequests();
+                              setSelectedRequestId(null);
+                            } else {
+                              showNotice("error", "Error", data.message || "Failed to archive request.");
+                            }
+                          }
+                        });
+                      }}
+                      onDeleteRequest={(id) => {
+                        setConfirmConfig({
+                          title: "Permanently Delete Request?",
+                          message: "CRITICAL: This will PERMANENTLY remove this record from the database. This action CANNOT be undone. Proceed with extreme caution.",
+                          confirmLabel: "Delete Permanently",
+                          tone: "danger",
+                          onConfirm: async () => {
+                            const { ok, data } = await api.deleteRequest(id, currentUser?.id);
+                            if (ok) {
+                              showNotice("success", "Deleted", data.message || "Request removed permanently.");
+                              handleRefreshRequests();
+                              setAllUsers(await fetchUsersData());
+                              setSelectedRequestId(null);
+                            } else {
+                              showNotice("error", "Error", data.message || "Failed to delete request.");
+                            }
+                          }
+                        });
                       }}
                     />
                     <RequestTable 

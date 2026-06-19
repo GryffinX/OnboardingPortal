@@ -82,7 +82,7 @@ function RequestTable({
           requests
             .filter((r) => matchesSearch(r, searchTerm || ""))
             .map((request) => {
-            const stageMeta = getStageMeta(request.stage);
+            const stageMeta = getStageMeta(request.isDeleted ? "archived" : request.stage);
 
             return (
               <div

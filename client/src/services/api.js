@@ -6,7 +6,9 @@ function getAuthHeaders(existingHeaders = {}) {
   if (sessionData) {
     try {
       token = JSON.parse(sessionData).token;
-    } catch(e) {}
+    } catch {
+      // sessionData might not be valid JSON, ignore
+    }
   }
   const headers = { ...existingHeaders };
   if (token) {

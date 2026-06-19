@@ -19,9 +19,10 @@ const HRDashboard = ({
   onStopCase,
   onSaveSoftware,
   onStartHrEdit,
+  onDeleteRequest,
+  onArchiveRequest,
   editingHrRequestId,
   setEditingHrRequestId,
-  queueTabConfig,
   visibleRequests,
   searchTerm,
   onSearchChange,
@@ -69,6 +70,8 @@ const HRDashboard = ({
             onApprove={onApprove}
             onSendToHr={onSendToHr}
             onStopCase={onStopCase}
+            onDeleteRequest={onDeleteRequest}
+            onArchiveRequest={onArchiveRequest}
           />
           <RequestTable
             title={getQueueTitle()}

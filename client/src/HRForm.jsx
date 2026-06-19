@@ -96,9 +96,11 @@ export default function HRForm({
 
   useEffect(() => {
     if (!formData.department) {
-      setDepartmentSoftware({
-        preInstalledSoftware: [],
-        employeeInstalledSoftware: [],
+      Promise.resolve().then(() => {
+        setDepartmentSoftware({
+          preInstalledSoftware: [],
+          employeeInstalledSoftware: [],
+        });
       });
       return;
     }

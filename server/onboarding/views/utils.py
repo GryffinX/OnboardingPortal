@@ -295,6 +295,110 @@ def dump_software_list(items):
     import json
     return json.dumps(parse_software_list(items))
 
+DATE_LABEL_FORMAT = "%d %b %Y"
+
+def _format_date(date_value):
+    if not date_value:
+        return ""
+    return date_value.strftime(DATE_LABEL_FORMAT)
+
+def _get_employee_code_by_name(name):
+    if not name: return ""
+    from django.contrib.auth.models import User
+    from django.db.models import Q
+    from ..models import UserProfile
+    user = User.objects.filter(Q(first_name__icontains=name) | Q(last_name__icontains=name)).first()
+    if user:
+        try:
+            return user.profile.employee_code or ""
+        except UserProfile.DoesNotExist:
+            pass
+    return ""
+
+def _serialize_user(user):
+    if not user: return None
+    from ..models import UserProfile
+    employee_code = ""
+    try:
+        employee_code = user.profile.employee_code or ""
+    except UserProfile.DoesNotExist:
+        pass
+        
+    return {
+        "id": user.id,
+        "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+        "employeeCode": employee_code
+    }
+
+def serialize_request(record):
+    from .common import get_department_software_lists
+    department_lists = get_department_software_lists(record.department)
+    
+    subject_code = record.employee_code or ""
+    if not subject_code:
+        from ..models import UserProfile
+        from django.contrib.auth.models import User
+        from django.db.models import Q
+        user_obj = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).first()
+        if user_obj:
+            try:
+                subject_code = user_obj.profile.employee_code or ""
+            except UserProfile.DoesNotExist:
+                pass
+
+    return {
+        "id": record.id,
+        "requestCode": record.request_code,
+        "employeeCode": subject_code,
+        "formData": {
+            "name": record.employee_name,
+            "employeePhoneNumber": record.employee_phone_number,
+            "personalEmail": record.personal_email,
+            "officialEmailUser": (record.official_email or "").split("@")[0],
+            "department": record.department,
+            "lineManager": record.line_manager,
+            "lineManagerCode": _get_employee_code_by_name(record.line_manager),
+            "hod": record.hod,
+            "hodCode": _get_employee_code_by_name(record.hod),
+        },
+        "officialEmail": record.official_email or "",
+        "stage": record.stage,
+        "submittedAt": _format_date(record.submitted_at),
+        "lastUpdated": _format_date(record.last_updated),
+        "additionalSoftware": [],
+        "managerSoftware": parse_software_list(record.manager_software),
+        "hodSoftware": [],
+        "preInstalledSoftware": department_lists["preInstalledSoftware"],
+        "employeeInstalledSoftware": department_lists["employeeInstalledSoftware"],
+        "assetCode": record.asset_code,
+        "hodComment": record.hod_comment,
+        "stopReason": record.stop_reason,
+        "reviewRequestedBy": record.review_requested_by,
+        "reviewReason": record.review_reason,
+        "revisionCount": record.revision_count,
+        "managerApprovedAt": record.manager_approved_at,
+        "hodApprovedAt": record.hod_approved_at,
+        "dateOfJoining": record.date_of_joining,
+        
+        # Soft Delete Fields
+        "isDeleted": record.is_deleted,
+        "deletedAt": _format_date(record.deleted_at),
+        "deletedBy": record.deleted_by.username if record.deleted_by else None,
+        "deleteReason": record.delete_reason,
+
+        # New Infrastructure Fields
+        "infraAdmin": _serialize_user(record.infra_admin),
+        "infraAdminComment": record.infra_admin_comment,
+        "infraExecutive": _serialize_user(record.infra_executive),
+        "infraSoftware": parse_software_list(record.infra_software),
+        "laptopModel": record.laptop_model,
+        "laptopRam": record.laptop_ram,
+        "laptopStorage": record.laptop_storage,
+        "laptopProcessor": record.laptop_processor,
+        "laptopGpu": record.laptop_gpu,
+        "laptopAcknowledged": record.laptop_acknowledged,
+    }
+
 import jwt
 import datetime
 from django.http import JsonResponse
@@ -319,8 +423,12 @@ def jwt_required(view_func):
         token = auth_header.split(' ')[1]
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
-            request.user_id = payload['user_id']
-            request.user_email = payload['email']
+            user_id = payload.get('user_id')
+            email = payload.get('email')
+            if not user_id or not email:
+                return JsonResponse({'message': 'Invalid token payload.'}, status=401)
+            request.user_id = user_id
+            request.user_email = email
         except jwt.ExpiredSignatureError:
             return JsonResponse({'message': 'Signature has expired.'}, status=401)
         except jwt.InvalidTokenError:

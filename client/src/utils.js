@@ -521,13 +521,14 @@ export function applyQueueTabFilter(requests, filterKey, { user, currentPage, pa
     return requests.filter((r) => r.stage === workflowStages.approved);
   }
   if (filterKey === "all") {
-    return requests;
+    // "All Mine" active operational view
+    return requests.filter((r) => !r.isDeleted);
   }
   if (filterKey === "pending") {
     const pendingStage = getPendingStageForPage(currentPage, pagesMap)
       || getPendingStageForUser(user, pagesMap);
     if (!pendingStage) return requests;
-    return requests.filter((r) => r.stage === pendingStage);
+    return requests.filter((r) => !r.isDeleted && r.stage === pendingStage);
   }
 
   return requests;
@@ -536,11 +537,11 @@ export function applyQueueTabFilter(requests, filterKey, { user, currentPage, pa
 export function countPendingForPage(requests, page, pagesMap) {
   const pendingStage = getPendingStageForPage(page, pagesMap);
   if (!pendingStage) return 0;
-  return requests.filter((r) => r.stage === pendingStage).length;
+  return requests.filter((r) => !r.isDeleted && r.stage === pendingStage).length;
 }
 
 export function countPendingForUser(requests, user, pagesMap) {
   const pendingStage = getPendingStageForUser(user, pagesMap);
   if (!pendingStage) return 0;
-  return requests.filter((r) => r.stage === pendingStage).length;
+  return requests.filter((r) => !r.isDeleted && r.stage === pendingStage).length;
 }

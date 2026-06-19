@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import "./App.css"; 
 import { api } from "./services/api";
 import DashboardTabBar from "./components/DashboardTabBar";
+import RequestDetailPanel from "./components/RequestDetailPanel";
+import { pages } from "./constants";
 import {
   validateName, 
   validateEmail, 
@@ -36,6 +38,7 @@ const AdminDashboard = ({
   onDeleteUser,
   onShowConfirm,
   onShowNotice,
+  onRefreshRequests,
   apiBaseUrl = "http://127.0.0.1:8000" 
 }) => {
   const [activeTab, setActiveTab] = useState("users"); // users, software, hardware, logs
@@ -63,6 +66,7 @@ const AdminDashboard = ({
   const [changelogs, setChangelogs] = useState([]);
   const [changelogSearch, setChangelogSearch] = useState("");
   const [archivedRequests, setArchivedRequests] = useState([]);
+  const [viewingArchivedRequest, setViewingArchivedRequest] = useState(null);
 
   const fetchChangelogs = async () => {
     const { ok, data } = await api.fetchChangelogs(currentUser?.id);
@@ -153,14 +157,6 @@ const AdminDashboard = ({
     };
     initDashboard();
   }, [apiBaseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleDeleteUser = async (email, archiveRequest = false) => {
-    const { ok, data } = await onDeleteUser(email, archiveRequest);
-    if (ok) {
-      // Refresh user list and potentially archived list
-      if (archiveRequest) fetchArchivedRequests();
-    }
-  };
 
   const safeUsers = Array.isArray(users)
     ? users
@@ -266,7 +262,7 @@ const AdminDashboard = ({
     );
     if (ok) {
       onShowNotice("success", "Software Updated", data.message);
-      await fetchWorkflow();
+      await fetchCatalog();
       setShowModal(null);
       fetchChangelogs();
     } else {
@@ -408,10 +404,10 @@ const AdminDashboard = ({
                         title: "Deletion Options",
                         message: (
                           <div>
-                            <p>Choose how to remove <strong>{user.name}</strong>:</p>
+                            <p>Remove <strong>{user.name}</strong>:</p>
                             <div style={{ marginTop: "12px", textAlign: "left", fontSize: "0.85rem", color: "#475569" }}>
                               <p><strong>1. Delete User Only:</strong> Removes login access. Employee code and emails become available for reuse. Onboarding request remains visible for audit.</p>
-                              <p style={{ marginTop: "8px" }}><strong>2. Delete User + Archive Request:</strong> Removes login access AND hides the onboarding request from all operational views (Soft Delete).</p>
+                              <p style={{ marginTop: "8px" }}><strong>2. Delete & Archive Request:</strong> Removes login access AND hides the onboarding request from all operational views (Soft Delete). Delete the user from here and archive the request from the Global Audit.</p>
                             </div>
                           </div>
                         ),
@@ -442,7 +438,7 @@ const AdminDashboard = ({
             </div>
           </div>
           <div className="request-table">
-            <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr 1fr" }}>
+            <div className="request-row request-row-header" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr 1.5fr" }}>
               <span>Employee</span>
               <span>Identifiers</span>
               <span>Final Status</span>
@@ -454,23 +450,31 @@ const AdminDashboard = ({
                 <div className="request-empty">No archived requests found.</div>
               ) : (
                 archivedRequests.map((req) => (
-                  <div key={req.id} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr 1fr" }}>
+                  <div key={req.id} className="request-row" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr 1.5fr" }}>
                     <div><strong>{req.formData.name}</strong><div style={{ fontSize: '0.75rem', color: '#64748b' }}>{req.formData.department}</div></div>
                     <div>
                       <div style={{ fontSize: '0.85rem' }}>Code: {req.employeeCode || "N/A"}</div>
                       <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{req.formData.personalEmail}</div>
                     </div>
                     <div>
-                      <span className={`status-pill status-pill-${req.stage.replace('_', '-')}`}>
-                        {req.stage.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      <span className="status-pill status-pill-archived">
+                        Archived
                       </span>
                     </div>
                     <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{req.lastUpdated}</span>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button 
                         type="button" 
-                        className="action-button action-button-edit" 
-                        style={{ flex: 1 }}
+                        className="action-button" 
+                        style={{ flex: 1, background: "#0B2D52", color: "white", border: "none" }}
+                        onClick={() => setViewingArchivedRequest(req)}
+                      >
+                        View
+                      </button>
+                      <button 
+                        type="button" 
+                        className="action-button" 
+                        style={{ flex: 1, background: "#22C55E", color: "white", border: "none" }}
                         onClick={async () => {
                           const { ok, data } = await api.restoreRequest(req.id, currentUser?.id);
                           if (ok) {
@@ -486,8 +490,8 @@ const AdminDashboard = ({
                       </button>
                       <button 
                         type="button" 
-                        className="action-button action-button-delete" 
-                        style={{ flex: 1 }}
+                        className="action-button" 
+                        style={{ flex: 1, background: "#EF4444", color: "white", border: "none" }}
                         onClick={() => onShowConfirm({
                           title: "Permanently Delete Archived Request?",
                           message: `CRITICAL: This will PERMANENTLY remove the archived request for "${req.formData.name}" from the database. This cannot be undone.`,
@@ -514,6 +518,59 @@ const AdminDashboard = ({
             </div>
           </div>
         </section>
+      )}
+
+      {viewingArchivedRequest && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ width: "800px", maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div className="modal-topbar">
+              <div>
+                <h3>View Archived Request</h3>
+                <p>Read-only view of the archived record.</p>
+              </div>
+              <button className="ghost-button" onClick={() => setViewingArchivedRequest(null)}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", background: "#f8fafc", padding: "16px" }}>
+              <RequestDetailPanel
+                request={viewingArchivedRequest}
+                role={pages.admin}
+                userDepartment={currentUser?.department}
+                allUsers={users}
+                onShowNotice={onShowNotice}
+                onDeleteRequest={async (id) => {
+                  onShowConfirm({
+                    title: "Permanently Delete Archived Request?",
+                    message: "CRITICAL: This will PERMANENTLY remove the archived request from the database. This cannot be undone.",
+                    confirmLabel: "Delete Permanently",
+                    tone: "danger",
+                    onConfirm: async () => {
+                      const { ok, data } = await api.deleteRequest(id, currentUser?.id);
+                      if (ok) {
+                        onShowNotice("success", "Deleted", data.message || "Archived record removed permanently.");
+                        setViewingArchivedRequest(null);
+                        fetchArchivedRequests();
+                        onRefreshRequests?.();
+                      } else {
+                        onShowNotice("error", "Error", data.message || "Failed to delete archived request.");
+                      }
+                    }
+                  });
+                }}
+                onRestoreRequest={async (id) => {
+                  const { ok, data } = await api.restoreRequest(id, currentUser?.id);
+                  if (ok) {
+                    onShowNotice("success", "Restored", data.message);
+                    fetchArchivedRequests();
+                    onRefreshRequests?.();
+                    setViewingArchivedRequest(null);
+                  } else {
+                    onShowNotice("error", "Restore Failed", data.message);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {activeTab === 'software' && (

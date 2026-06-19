@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 
 from ..models import OnboardingRequest, AssetInventory, validate_comment_text
-from .utils import jwt_required, admin_required, parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification
+from .utils import jwt_required, admin_required, parse_software_list, dump_software_list, validate_generic_input, send_workflow_notification, serialize_request
 from .changelog import log_change, snapshot_request, describe_request_changes, is_admin_user, get_actor
 from .common import get_department_software_lists
 
@@ -70,68 +70,6 @@ def _serialize_user(user):
         "id": user.id,
         "name": f"{user.first_name} {user.last_name}".strip() or user.username,
         "employeeCode": employee_code
-    }
-
-def serialize_request(record):
-    department_lists = get_department_software_lists(record.department)
-    subject_code = record.employee_code or ""
-    if not subject_code:
-        from ..models import UserProfile
-        from django.contrib.auth.models import User
-        from django.db.models import Q
-        # Try to find the user by personal or official email
-        user_obj = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).first()
-        if user_obj:
-            try:
-                subject_code = user_obj.profile.employee_code or ""
-            except UserProfile.DoesNotExist:
-                pass
-
-    return {
-        "id": record.id,
-        "requestCode": record.request_code,
-        "employeeCode": subject_code,
-        "formData": {
-            "name": record.employee_name,
-            "employeePhoneNumber": record.employee_phone_number,
-            "personalEmail": record.personal_email,
-            "officialEmailUser": (record.official_email or "").split("@")[0],
-            "department": record.department,
-            "lineManager": record.line_manager,
-            "lineManagerCode": _get_employee_code_by_name(record.line_manager),
-            "hod": record.hod,
-            "hodCode": _get_employee_code_by_name(record.hod),
-        },
-        "officialEmail": record.official_email or "",
-        "stage": record.stage,
-        "submittedAt": _format_date(record.submitted_at),
-        "lastUpdated": _format_date(record.last_updated),
-        "additionalSoftware": [],
-        "managerSoftware": parse_software_list(record.manager_software),
-        "hodSoftware": [],
-        "preInstalledSoftware": department_lists["preInstalledSoftware"],
-        "employeeInstalledSoftware": department_lists["employeeInstalledSoftware"],
-        "assetCode": record.asset_code,
-        "hodComment": record.hod_comment,
-        "stopReason": record.stop_reason,
-        "reviewRequestedBy": record.review_requested_by,
-        "reviewReason": record.review_reason,
-        "revisionCount": record.revision_count,
-        "managerApprovedAt": record.manager_approved_at,
-        "hodApprovedAt": record.hod_approved_at,
-        "dateOfJoining": record.date_of_joining,
-        
-        # New Infrastructure Fields
-        "infraAdmin": _serialize_user(record.infra_admin),
-        "infraAdminComment": record.infra_admin_comment,
-        "infraExecutive": _serialize_user(record.infra_executive),
-        "infraSoftware": parse_software_list(record.infra_software),
-        "laptopModel": record.laptop_model,
-        "laptopRam": record.laptop_ram,
-        "laptopStorage": record.laptop_storage,
-        "laptopProcessor": record.laptop_processor,
-        "laptopGpu": record.laptop_gpu,
-        "laptopAcknowledged": record.laptop_acknowledged,
     }
 
 # --- ASSET INVENTORY VIEWS ---
@@ -283,7 +221,11 @@ def delete_asset(request):
 @jwt_required
 @require_http_methods(["GET"])
 def get_requests(request):
-    records = OnboardingRequest.objects.all().order_by("-submitted_at", "-id")
+    include_archived = request.GET.get("includeArchived") == "true"
+    if include_archived:
+        records = OnboardingRequest.objects.all().order_by("-submitted_at", "-id")
+    else:
+        records = OnboardingRequest.objects.filter(is_deleted=False).order_by("-submitted_at", "-id")
     return JsonResponse({"requests": [serialize_request(record) for record in records]})
 
 
@@ -370,6 +312,27 @@ def save_request(request):
                 if "officialEmail" in payload: req.official_email = payload["officialEmail"]
                 if "managerSoftware" in payload: req.manager_software = dump_software_list(payload["managerSoftware"])
                 
+                if "assetCode" in payload or "employeeCode" in payload:
+                    # Check if it's an admin override or regular workflow assignment
+                    is_admin_override = ("stage" not in payload) and ("actionType" not in payload or payload.get("actionType") == "Update")
+                    
+                    if is_admin_override:
+                        if req.stage == "stopped" or req.is_deleted:
+                            return JsonResponse({"message": "Overrides are not permitted on closed or archived requests."}, status=400)
+                        
+                        # Check linked user
+                        from django.contrib.auth.models import User
+                        emails_to_check = []
+                        if req.personal_email: emails_to_check.append(req.personal_email)
+                        if req.official_email: emails_to_check.append(req.official_email)
+                        
+                        user_exists = False
+                        if emails_to_check:
+                            user_exists = User.objects.filter(email__in=emails_to_check).exists()
+                            
+                        if not user_exists and req.stage == "approved":
+                            return JsonResponse({"message": "Overrides are not permitted when the linked user account does not exist."}, status=400)
+
                 if "assetCode" in payload:
                     new_asset_code = (payload["assetCode"] or "").strip()
                     if new_asset_code != req.asset_code:
@@ -379,12 +342,32 @@ def save_request(request):
                             if old_asset:
                                 old_asset.is_assigned = False
                                 old_asset.save()
-                        # Assign new asset
+                        # Assign new asset and sync hardware details
                         if new_asset_code:
                             new_asset = AssetInventory.objects.filter(asset_code=new_asset_code).first()
                             if new_asset:
                                 new_asset.is_assigned = True
                                 new_asset.save()
+                                
+                                # Sync specs
+                                req.laptop_model = new_asset.laptop_model
+                                req.laptop_processor = new_asset.laptop_processor
+                                req.laptop_ram = new_asset.laptop_ram
+                                req.laptop_storage = new_asset.laptop_storage
+                                req.laptop_gpu = new_asset.laptop_gpu
+                            else:
+                                return JsonResponse({"message": "Selected asset code does not exist in inventory."}, status=400)
+                        else:
+                            # If cleared
+                            req.laptop_model = ""
+                            req.laptop_processor = ""
+                            req.laptop_ram = ""
+                            req.laptop_storage = ""
+                            req.laptop_gpu = ""
+
+                        # Reset acknowledgment
+                        req.laptop_acknowledged = False
+                        
                     req.asset_code = new_asset_code
 
                 if "employeeCode" in payload:
@@ -644,10 +627,16 @@ def archive_request(request):
 
             # 2. Linked user account check
             from django.contrib.auth.models import User
-            from django.db.models import Q
-            user_exists = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).exists()
-            if user_exists:
-                return JsonResponse({"message": "Delete the linked user account first before archiving this request."}, status=400)
+            emails_to_check = []
+            if record.personal_email:
+                emails_to_check.append(record.personal_email)
+            if record.official_email:
+                emails_to_check.append(record.official_email)
+                
+            if emails_to_check:
+                user_exists = User.objects.filter(email__in=emails_to_check).exists()
+                if user_exists:
+                    return JsonResponse({"message": "Delete the linked user account first before archiving this request."}, status=400)
 
             # 3. Status check (Must be Approved or Stopped)
             if record.stage not in ["approved", "stopped"]:
@@ -705,10 +694,16 @@ def delete_request(request):
 
             # 2. Linked user account check
             from django.contrib.auth.models import User
-            from django.db.models import Q
-            user_exists = User.objects.filter(Q(email=record.personal_email) | Q(email=record.official_email)).exists()
-            if user_exists:
-                return JsonResponse({"message": "Delete the linked user account first before deleting this request."}, status=400)
+            emails_to_check = []
+            if record.personal_email:
+                emails_to_check.append(record.personal_email)
+            if record.official_email:
+                emails_to_check.append(record.official_email)
+                
+            if emails_to_check:
+                user_exists = User.objects.filter(email__in=emails_to_check).exists()
+                if user_exists:
+                    return JsonResponse({"message": "Delete the linked user account first before deleting this request."}, status=400)
 
             # 3. Status check (Must be Approved or Stopped)
             if record.stage not in ["approved", "stopped"]:

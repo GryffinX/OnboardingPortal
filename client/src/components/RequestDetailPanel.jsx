@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../services/api";
 import SoftwareSection from "./SoftwareSection";
 import { pages, workflowStages } from "../constants";
@@ -16,8 +16,8 @@ function getInitialSoftwareDraft(request, role) {
     return request?.managerSoftware?.join(", ") || "";
   }
 
-  if (role === pages.hod) {
-    return request?.hodSoftware?.join(", ") || "";
+  if (role === pages.infraAdmin) {
+    return request?.infraSoftware?.join(", ") || "";
   }
 
   return "";
@@ -35,6 +35,7 @@ function RequestDetailPanel({
   onStopCase,
   onDeleteRequest,
   onArchiveRequest,
+  onRestoreRequest,
   onShowNotice,
   onAcknowledgeLaptop,
 }) {
@@ -51,6 +52,10 @@ function RequestDetailPanel({
   const [laptopStorageDraft, setLaptopStorageDraft] = useState(() => request?.laptopStorage || "");
   const [laptopProcessorDraft, setLaptopProcessorDraft] = useState(() => request?.laptopProcessor || "");
   const [laptopGpuDraft, setLaptopGpuDraft] = useState(() => request?.laptopGpu || "");
+  const [isLaptopConfirmed, setIsLaptopConfirmed] = useState(false);
+
+  const [adminEmpCodeDraft, setAdminEmpCodeDraft] = useState(() => request?.employeeCode || "");
+  const [adminAssetCodeDraft, setAdminAssetCodeDraft] = useState(() => request?.assetCode || "");
 
   const [assetInventory, setAssetInventory] = useState([]);
   const [assetSearch, setAssetSearch] = useState("");
@@ -70,27 +75,41 @@ function RequestDetailPanel({
 
   useEffect(() => {
     if (role === pages.admin && request?.assetCode) {
-      setAssetSearch(request.assetCode);
+      Promise.resolve().then(() => {
+        setAssetSearch(request.assetCode);
+      });
     }
   }, [role, request]);
 
   const filteredAssets = assetInventory.filter(a => {
-    // If the search term is empty OR it matches the currently selected asset code exactly, 
-    // we show all assets (allowing the user to see the full list when they focus/click).
-    if (!assetSearch || assetSearch === assetCodeDraft) return true;
+    if (!a) return false;
+    // Show all assets if search is empty, or if the search exactly matches the currently selected asset in either view
+    if (!assetSearch || assetSearch === assetCodeDraft || assetSearch === adminAssetCodeDraft) return true;
     
-    return (a.assetCode.toLowerCase().includes(assetSearch.toLowerCase()) || 
-            a.laptopModel.toLowerCase().includes(assetSearch.toLowerCase()));
+    return ((a.assetCode || "").toLowerCase().includes((assetSearch || "").toLowerCase()) || 
+            (a.laptopModel || "").toLowerCase().includes((assetSearch || "").toLowerCase()));
   });
 
   const handleSelectAsset = (asset) => {
-    setAssetCodeDraft(asset.assetCode);
-    setLaptopModelDraft(asset.laptopModel);
-    setLaptopProcessorDraft(asset.laptopProcessor);
-    setLaptopRamDraft(asset.laptopRam);
-    setLaptopStorageDraft(asset.laptopStorage);
-    setLaptopGpuDraft(asset.laptopGpu);
-    setAssetSearch(asset.assetCode);
+    setAssetCodeDraft(asset.assetCode || "");
+    setLaptopModelDraft(asset.laptopModel || "");
+    setLaptopProcessorDraft(asset.laptopProcessor || "");
+    setLaptopRamDraft(asset.laptopRam || "");
+    setLaptopStorageDraft(asset.laptopStorage || "");
+    setLaptopGpuDraft(asset.laptopGpu || "");
+    setAssetSearch(asset.assetCode || "");
+    setIsAssetDropdownOpen(false);
+  };
+
+  const handleSelectAdminAsset = (asset) => {
+    if (!asset) return;
+    setAdminAssetCodeDraft(asset.assetCode || "");
+    setLaptopModelDraft(asset.laptopModel || "");
+    setLaptopProcessorDraft(asset.laptopProcessor || "");
+    setLaptopRamDraft(asset.laptopRam || "");
+    setLaptopStorageDraft(asset.laptopStorage || "");
+    setLaptopGpuDraft(asset.laptopGpu || "");
+    setAssetSearch(asset.assetCode || "");
     setIsAssetDropdownOpen(false);
   };
 
@@ -114,9 +133,6 @@ function RequestDetailPanel({
   const [showStopModal, setShowStopModal] = useState(false);
   const [hrReason, setHrReason] = useState("");
   const [stopReason, setStopReason] = useState("");
-
-  const [adminEmpCodeDraft, setAdminEmpCodeDraft] = useState(() => request?.employeeCode || "");
-  const [adminAssetCodeDraft, setAdminAssetCodeDraft] = useState(() => request?.assetCode || "");
 
   const [assetCodeError, setAssetCodeError] = useState("");
 
@@ -156,14 +172,15 @@ function RequestDetailPanel({
 
   const linkedUserExists = allUsers.some((user) => {
     const userEmail = (user.email || "").toLowerCase();
+    if (!userEmail) return false;
     return userEmail === (request.formData?.personalEmail || "").toLowerCase() || 
-           userEmail === (request.officialEmail || "").toLowerCase();
+           (request.officialEmail && userEmail === request.officialEmail.toLowerCase());
   });
 
   const isWorkflowActive = ["manager_review", "hod_review", "infra_admin_review", "infra_executive_review", "hr_review"].includes(request.stage);
   const canActOnRequest = !linkedUserExists && !isWorkflowActive && (request.stage === "approved" || request.stage === "stopped");
 
-  const stageMeta = getStageMeta(request.stage);
+  const stageMeta = getStageMeta(request.isDeleted ? "archived" : request.stage);
   const isManagerStep = role === pages.manager && request.stage === workflowStages.manager;
   const isHodStep = role === pages.hod && request.stage === workflowStages.hod;
   const isInfraAdminStep = role === pages.infraAdmin && request.stage === workflowStages.infraAdmin;
@@ -172,9 +189,9 @@ function RequestDetailPanel({
   const isHrRole = role === pages.hr;
   const isHrStep = isHrRole && request.stage === workflowStages.hr;
   const isEmployee = role === pages.status;
-  const canAct = isManagerStep || isHodStep || isInfraAdminStep || isInfraExecutiveStep;
-  const canHrStop = isHrDept && typeof onStopCase === "function" && request.stage !== workflowStages.approved && request.stage !== workflowStages.stopped;
-  const canHrEdit = isHrDept && isHrStep && typeof onStartHrEdit === "function";
+  const canAct = !request.isDeleted && (isManagerStep || isHodStep || isInfraAdminStep || isInfraExecutiveStep);
+  const canHrStop = !request.isDeleted && isHrDept && typeof onStopCase === "function" && request.stage !== workflowStages.approved && request.stage !== workflowStages.stopped;
+  const canHrEdit = !request.isDeleted && isHrDept && isHrStep && typeof onStartHrEdit === "function";
 
   const handleStopCaseSubmit = () => {
     const error = validateCommentInput(stopReason, "Reason");
@@ -222,7 +239,7 @@ function RequestDetailPanel({
       onShowNotice?.("error", "Validation Error", "Please assign an Infrastructure Executive.");
       return;
     }
-    onSaveSoftware?.(request.id, [], role, {
+    onSaveSoftware?.(request.id, normalizeSoftwareList(softwareDraft), role, {
       infraAdminComment: infraAdminCommentDraft,
       infraExecutive: infraExecutiveDraft,
     });
@@ -295,30 +312,53 @@ function RequestDetailPanel({
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           {role === pages.admin && (
             <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                type="button"
-                className="action-button action-button-edit"
-                style={{ opacity: canActOnRequest ? 1 : 0.5, cursor: canActOnRequest ? "pointer" : "not-allowed" }}
-                disabled={!canActOnRequest}
-                title={
-                  linkedUserExists ? "Delete the linked user account first." :
-                  isWorkflowActive ? "Stop the active workflow first." :
-                  !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be archived." :
-                  "Archive this request"
-                }
-                onClick={() => onArchiveRequest?.(request.id)}
-              >
-                Archive
-              </button>
+              {request.isDeleted ? (
+                <button
+                  type="button"
+                  className="action-button action-button-edit"
+                  style={{ opacity: 1, cursor: "pointer", background: "#22C55E", color: "white" }}
+                  title="Restore this request to active workflows"
+                  onClick={async () => {
+                    if (onRestoreRequest) {
+                      await onRestoreRequest(request.id);
+                    } else {
+                      const { ok, data } = await api.restoreRequest(request.id, null);
+                      if (ok) {
+                        onShowNotice?.("success", "Restored", data.message || "Request restored successfully");
+                      } else {
+                        onShowNotice?.("error", "Restore Failed", data?.message || "Failed to restore request.");
+                      }
+                    }
+                  }}
+                >
+                  Restore
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="action-button action-button-edit"
+                  style={{ opacity: canActOnRequest ? 1 : 0.5, cursor: canActOnRequest ? "pointer" : "not-allowed" }}
+                  disabled={!canActOnRequest}
+                  title={
+                    linkedUserExists ? "Delete the linked user account first." :
+                    isWorkflowActive ? "Stop the active workflow first." :
+                    !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be archived." :
+                    "Archive this request"
+                  }
+                  onClick={() => onArchiveRequest?.(request.id)}
+                >
+                  Archive
+                </button>
+              )}
               <button
                 type="button"
                 className="action-button action-button-delete"
-                style={{ opacity: canActOnRequest ? 1 : 0.5, cursor: canActOnRequest ? "pointer" : "not-allowed" }}
-                disabled={!canActOnRequest}
+                style={{ opacity: (request.isDeleted || canActOnRequest) ? 1 : 0.5, cursor: (request.isDeleted || canActOnRequest) ? "pointer" : "not-allowed", background: "#EF4444", color: "white" }}
+                disabled={!request.isDeleted && !canActOnRequest}
                 title={
-                  linkedUserExists ? "Delete the linked user account first." :
-                  isWorkflowActive ? "Stop the active workflow first." :
-                  !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be deleted permanently." :
+                  !request.isDeleted && linkedUserExists ? "Delete the linked user account first." :
+                  !request.isDeleted && isWorkflowActive ? "Stop the active workflow first." :
+                  !request.isDeleted && !(request.stage === "approved" || request.stage === "stopped") ? "Only Approved or Stopped requests can be deleted permanently." :
                   "Permanently delete this request"
                 }
                 onClick={() => onDeleteRequest?.(request.id)}
@@ -402,12 +442,16 @@ function RequestDetailPanel({
         title="Pre-installed on company laptop"
         tone="blue"
         items={request?.preInstalledSoftware}
+        emptyMessage="No company-provided software has been assigned."
+        showWhenEmpty
       />
 
       <SoftwareSection
         title="To be installed by employee"
         tone="yellow"
         items={request?.employeeInstalledSoftware}
+        emptyMessage="No employee-installed software has been assigned."
+        showWhenEmpty
       />
 
       <SoftwareSection
@@ -415,6 +459,8 @@ function RequestDetailPanel({
         tone="pending"
         items={request?.managerSoftware}
         headerLabel={request?.formData?.lineManager}
+        emptyMessage="No additional software requested by manager."
+        showWhenEmpty
       />
 
       <SoftwareSection
@@ -422,6 +468,8 @@ function RequestDetailPanel({
         tone="infra-admin"
         items={request?.infraSoftware}
         headerLabel={request?.infraAdmin?.name}
+        emptyMessage="No additional software added by Infrastructure Admin."
+        showWhenEmpty
       />
 
       {request?.laptopModel && (
@@ -441,12 +489,24 @@ function RequestDetailPanel({
             <div><span>GPU</span><strong>{request?.laptopGpu || "Integrated Graphics"}</strong></div>
           </div>
           {isEmployee && !request?.laptopAcknowledged && (
-            <div className="detail-actions" style={{ marginTop: "24px" }}>
+            <div className="detail-actions" style={{ marginTop: "24px", flexDirection: "column", gap: "12px" }}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "0.9rem", color: "#475569", cursor: "pointer" }}>
+                <input 
+                  type="checkbox" 
+                  checked={isLaptopConfirmed}
+                  onChange={(e) => setIsLaptopConfirmed(e.target.checked)}
+                  style={{ marginTop: "4px" }}
+                />
+                <span>I confirm that I have physically received the assigned laptop and verified the hardware details shown above.</span>
+              </label>
               <button 
                 type="button" 
                 className="primary-button" 
-                style={{ background: "#7e22ce", width: "100%" }}
-                onClick={() => onAcknowledgeLaptop?.(request.id)}
+                style={{ background: isLaptopConfirmed ? "#7e22ce" : "#cbd5e1", width: "100%", cursor: isLaptopConfirmed ? "pointer" : "not-allowed" }}
+                disabled={!isLaptopConfirmed}
+                onClick={() => {
+                  if (isLaptopConfirmed) onAcknowledgeLaptop?.(request.id);
+                }}
               >
                 Acknowledge Receipt of Laptop
               </button>
@@ -464,7 +524,14 @@ function RequestDetailPanel({
         <section className="software-input-card" style={{ borderTop: "2px solid #102a43", background: "#f8fafc" }}>
           <h4>Admin Institutional Overrides</h4>
           <p>Directly modify unique identifiers. Changes will sync with user profiles where applicable.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "16px" }}>
+          
+          {(!linkedUserExists || request.stage === "stopped" || request.isDeleted) ? (
+            <div style={{ marginTop: "16px", padding: "12px", background: "#f1f5f9", color: "#475569", borderRadius: "8px", border: "1px solid #cbd5e1" }}>
+              <strong>Read-Only:</strong> This request is closed or has no active linked account. Institutional overrides are unavailable.
+            </div>
+          ) : null}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "16px", opacity: (!linkedUserExists || request.stage === "stopped" || request.isDeleted) ? 0.6 : 1 }}>
             <div className="form-group">
               <label>Employee Code</label>
               <input
@@ -474,6 +541,8 @@ function RequestDetailPanel({
                 onChange={(e) => setAdminEmpCodeDraft(cleanNumericInput(e.target.value, 5))}
                 placeholder="10001"
                 maxLength={5}
+                disabled={!linkedUserExists || request.stage === "stopped" || request.isDeleted}
+                style={{ cursor: (!linkedUserExists || request.stage === "stopped" || request.isDeleted) ? "not-allowed" : "text" }}
               />
             </div>
             <div className="form-group" style={{ position: "relative" }}>
@@ -481,21 +550,27 @@ function RequestDetailPanel({
               <input
                 type="text"
                 className="dashboard-search"
-                style={{ width: "100%", paddingRight: "40px" }}
+                style={{ width: "100%", paddingRight: "40px", cursor: (!linkedUserExists || request.stage === "stopped" || request.isDeleted) ? "not-allowed" : "text" }}
                 value={assetSearch}
                 onChange={(e) => {
                   setAssetSearch(e.target.value);
                   setIsAssetDropdownOpen(true);
                   if (!e.target.value) setAdminAssetCodeDraft("");
                 }}
-                onFocus={() => setIsAssetDropdownOpen(true)}
+                onFocus={() => {
+                  if (linkedUserExists && request.stage !== "stopped" && !request.isDeleted) setIsAssetDropdownOpen(true);
+                }}
                 placeholder="Search inventory..."
+                disabled={!linkedUserExists || request.stage === "stopped" || request.isDeleted}
               />
               <button 
                 type="button" 
                 className="ghost-button" 
                 style={{ position: "absolute", right: "8px", top: "32px", padding: "4px" }}
-                onClick={() => setIsAssetDropdownOpen(!isAssetDropdownOpen)}
+                onClick={() => {
+                  if (linkedUserExists && request.stage !== "stopped" && !request.isDeleted) setIsAssetDropdownOpen(!isAssetDropdownOpen);
+                }}
+                disabled={!linkedUserExists || request.stage === "stopped" || request.isDeleted}
               >
                 {isAssetDropdownOpen ? "▲" : "▼"}
               </button>
@@ -522,11 +597,7 @@ function RequestDetailPanel({
                       <div 
                         key={asset.id} 
                         style={{ padding: "10px 16px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", background: asset.assetCode === adminAssetCodeDraft ? "#eff6ff" : "transparent" }}
-                        onClick={() => {
-                          setAdminAssetCodeDraft(asset.assetCode);
-                          setAssetSearch(asset.assetCode);
-                          setIsAssetDropdownOpen(false);
-                        }}
+                        onClick={() => handleSelectAdminAsset(asset)}
                         className="asset-option-hover"
                       >
                         <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>{asset.assetCode}</div>
@@ -538,16 +609,47 @@ function RequestDetailPanel({
               )}
             </div>
           </div>
-          <div className="detail-actions detail-actions-compact" style={{ marginTop: "16px" }}>
-            <button
-              type="button"
-              className="primary-button"
-              onClick={handleSaveAdminOverrides}
-              style={{ background: "#102a43" }}
-            >
-              Save Institutional Overrides
-            </button>
-          </div>
+
+          {adminAssetCodeDraft && laptopModelDraft && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", background: "#f8fafc", padding: "12px", borderRadius: "8px", border: "1px solid #cbd5e1", marginTop: "16px", opacity: (!linkedUserExists || request.stage === "stopped" || request.isDeleted) ? 0.6 : 1 }}>
+              <div className="form-group" style={{ gridColumn: "span 2" }}>
+                <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#475569" }}>Previewing Specifications for {adminAssetCodeDraft}</span>
+              </div>
+              <div className="form-group">
+                <label>Model</label>
+                <input type="text" className="dashboard-search" value={laptopModelDraft} readOnly style={{ background: "#f1f5f9", cursor: "not-allowed" }} />
+              </div>
+              <div className="form-group">
+                <label>Processor</label>
+                <input type="text" className="dashboard-search" value={laptopProcessorDraft} readOnly style={{ background: "#f1f5f9", cursor: "not-allowed" }} />
+              </div>
+              <div className="form-group">
+                <label>RAM</label>
+                <input type="text" className="dashboard-search" value={laptopRamDraft} readOnly style={{ background: "#f1f5f9", cursor: "not-allowed" }} />
+              </div>
+              <div className="form-group">
+                <label>Storage</label>
+                <input type="text" className="dashboard-search" value={laptopStorageDraft} readOnly style={{ background: "#f1f5f9", cursor: "not-allowed" }} />
+              </div>
+              <div className="form-group" style={{ gridColumn: "span 2" }}>
+                <label>GPU</label>
+                <input type="text" className="dashboard-search" value={laptopGpuDraft || "Integrated Graphics"} readOnly style={{ background: "#f1f5f9", cursor: "not-allowed" }} />
+              </div>
+            </div>
+          )}
+          
+          {linkedUserExists && request.stage !== "stopped" && !request.isDeleted && (
+            <div className="detail-actions detail-actions-compact" style={{ marginTop: "16px" }}>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleSaveAdminOverrides}
+                style={{ background: "#102a43" }}
+              >
+                Save Institutional Overrides
+              </button>
+            </div>
+          )}
         </section>
       )}
 
