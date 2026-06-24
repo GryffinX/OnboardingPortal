@@ -46,7 +46,7 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
-_cors_origin_value = os.getenv("ALLOWED_ORIGINS", "")
+_cors_origin_value = os.getenv("ALLOWED_ORIGINS", os.getenv("ALLOWED_ORIGIN", ""))
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in _cors_origin_value.split(",")
@@ -106,18 +106,30 @@ TEMPLATES = [
 WSGI_APPLICATION = "onboarding_backend.wsgi.application"
 ASGI_APPLICATION = "onboarding_backend.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "mssql",
-        "NAME": os.getenv("DB_NAME"),
-        "HOST": os.getenv("DB_HOST"),
-        "OPTIONS": {
-            "driver": "ODBC Driver 18 for SQL Server",
-            "trusted_connection": "yes",
-            "extra_params": "TrustServerCertificate=yes;",
-        },
+DB_ENGINE = os.getenv("DB_ENGINE")
+if not DB_ENGINE:
+    DB_ENGINE = "sqlite" if DEBUG else "mssql"
+
+if DB_ENGINE.lower() == "sqlite":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "mssql",
+            "NAME": os.getenv("DB_NAME"),
+            "HOST": os.getenv("DB_HOST"),
+            "OPTIONS": {
+                "driver": "ODBC Driver 18 for SQL Server",
+                "trusted_connection": "yes",
+                "extra_params": "TrustServerCertificate=yes;",
+            },
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = []
 
