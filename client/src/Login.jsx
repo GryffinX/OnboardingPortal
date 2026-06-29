@@ -19,7 +19,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
     }
   };
 
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     const emailError = validateEmail(email);
     if (emailError) {
@@ -30,7 +30,15 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
       showMessage("Password is required.");
       return;
     }
-    onLogin(email, password);
+    setLoading(true);
+    setMessage(null);
+    try {
+      await onLogin(email, password);
+    } catch {
+      showMessage("Unable to reach the server. Make sure the Django API is running on port 8000.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleForgotSubmit = async (e) => {
@@ -48,7 +56,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
         setView("otp");
         showMessage("OTP sent to your email. Please check your inbox.", "success");
       } else {
-        showMessage(result.message || "Failed to send OTP. Please try again.");
+        showMessage(result.data?.message || "Failed to send OTP. Please try again.");
       }
     } catch {
       showMessage("An unexpected error occurred.");
@@ -72,7 +80,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
         setView("reset");
         showMessage("OTP verified. Please set your new password.", "success");
       } else {
-        showMessage(result.message || "Invalid or expired OTP.");
+        showMessage(result.data?.message || "Invalid or expired OTP.");
       }
     } catch {
       showMessage("An unexpected error occurred.");
@@ -104,7 +112,7 @@ const Login = ({ onLogin, onForgotPassword, onVerifyOtp, onResetPassword }) => {
         setResetToken("");
         showMessage("Password reset successfully. You can now login.", "success");
       } else {
-        showMessage(result.message || "Failed to reset password.");
+        showMessage(result.data?.message || "Failed to reset password.");
       }
     } catch {
       showMessage("An unexpected error occurred.");

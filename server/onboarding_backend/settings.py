@@ -46,22 +46,25 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+DEFAULT_LOCAL_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 _cors_origin_value = os.getenv("ALLOWED_ORIGINS", os.getenv("ALLOWED_ORIGIN", ""))
-CORS_ALLOWED_ORIGINS = [
+configured_origins = [
+
     origin.strip()
     for origin in _cors_origin_value.split(",")
     if origin.strip()
 ]
 
-if not CORS_ALLOWED_ORIGINS:
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+CORS_ALLOWED_ORIGINS = list(dict.fromkeys([*DEFAULT_LOCAL_ORIGINS, *configured_origins]))
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
 TEST_RECIPIENT = os.getenv("TEST_RECIPIENT", "g.ayush2k07@gmail.com")
 OFFICIAL_DOMAIN = "@securitas-india.com"
 
@@ -108,7 +111,9 @@ ASGI_APPLICATION = "onboarding_backend.asgi.application"
 
 DB_ENGINE = os.getenv("DB_ENGINE")
 if not DB_ENGINE:
-    DB_ENGINE = "sqlite" if DEBUG else "mssql"
+    has_external_db_config = bool(os.getenv("DB_NAME") and os.getenv("DB_HOST"))
+    DB_ENGINE = "mssql" if has_external_db_config else "sqlite"
+
 
 if DB_ENGINE.lower() == "sqlite":
     DATABASES = {
@@ -118,15 +123,27 @@ if DB_ENGINE.lower() == "sqlite":
         }
     }
 else:
+    db_user = os.getenv("DB_USER", "")
+    db_password = os.getenv("DB_PASSWORD", "")
+    db_port = os.getenv("DB_PORT", "")
+    db_driver = os.getenv("DB_DRIVER", "ODBC Driver 18 for SQL Server")
+    db_trusted_connection = os.getenv("DB_TRUSTED_CONNECTION", "yes" if not db_user else "no")
+    db_extra_params = os.getenv("DB_EXTRA_PARAMS", "TrustServerCertificate=yes;Encrypt=no;")
+
+
     DATABASES = {
         "default": {
             "ENGINE": "mssql",
             "NAME": os.getenv("DB_NAME"),
             "HOST": os.getenv("DB_HOST"),
+            "PORT": db_port,
+            "USER": db_user,
+            "PASSWORD": db_password,
             "OPTIONS": {
-                "driver": "ODBC Driver 18 for SQL Server",
-                "trusted_connection": "yes",
-                "extra_params": "TrustServerCertificate=yes;",
+                "driver": db_driver,
+                "trusted_connection": db_trusted_connection,
+                "extra_params": db_extra_params,
+
             },
         }
     }

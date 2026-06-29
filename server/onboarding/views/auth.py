@@ -97,8 +97,8 @@ def login_view(request):
     except json.JSONDecodeError:
         return JsonResponse({"message": "Invalid JSON payload."}, status=400)
 
-    email = (payload.get("email") or "").strip()
-    password = (payload.get("password") or "").strip()
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
 
     if not email or not password:
         return JsonResponse({"message": "Email and password are required."}, status=400)
@@ -108,11 +108,9 @@ def login_view(request):
     
     if user is None:
         # Try to find user by email and then authenticate
-        try:
-            user_obj = User.objects.get(email=email)
+        user_obj = User.objects.filter(email__iexact=email).first()
+        if user_obj:
             user = authenticate(request, username=user_obj.username, password=password)
-        except User.DoesNotExist:
-            user = None
 
     if user is not None:
         role, department_name, phone_number, employee_code, is_active = resolve_user_role_and_department(user)

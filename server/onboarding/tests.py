@@ -64,6 +64,43 @@ class CompleteOnboardingFlowTest(TestCase):
         self.ie_user = User.objects.create_user(username="ie@test.com", email="ie@test.com", password="password", first_name="Infra", last_name="Exec")
         UserProfile.objects.create(user=self.ie_user, role="Infrastructure Executive", department=self.dept_infra, phone_number="1234567894")
 
+    def test_login_is_case_insensitive(self):
+        response = self.client.post(
+            "/api/login",
+            data=json.dumps({"email": "ADMIN@TEST.COM", "password": "password"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("token", response.json())
+        self.assertEqual(response.json()["user"]["email"], "admin@test.com")
+
+    def test_admin_can_create_user_with_profile(self):
+        token = get_jwt_for_user(self.admin_user)
+        payload = {
+            "name": "Created User",
+            "email": "created@test.com",
+            "password": "password123",
+            "role": "Manager",
+            "department": "IT",
+            "phoneNumber": "9876543210",
+            "employeeCode": "12345",
+            "actorId": self.admin_user.id,
+        }
+
+        response = self.client.post(
+            "/api/create-user",
+            data=json.dumps(payload),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        created_user = User.objects.get(email="created@test.com")
+        self.assertEqual(created_user.profile.role, "Manager")
+        self.assertEqual(created_user.profile.department, self.dept_it)
+        self.assertEqual(created_user.profile.phone_number, "9876543210")
+
     def test_complete_onboarding_flow(self):
         admin_token = get_jwt_for_user(self.admin_user)
         auth_headers = {"HTTP_AUTHORIZATION": f"Bearer {admin_token}"}

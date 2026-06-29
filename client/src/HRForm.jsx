@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import "./HRForm.css";
 import SoftwareSection from "./components/SoftwareSection";
+import { api } from "./services/api";
 import { 
   validateName, 
   validateEmail, 
@@ -82,10 +83,9 @@ export default function HRForm({
   useEffect(() => {
     const fetchStaff = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/api/users`);
-        const data = await response.json();
-        if (response.ok) {
-          setStaff(data.users);
+        const { ok, data } = await api.fetchUsers();
+        if (ok) {
+          setStaff(Array.isArray(data.users) ? data.users : []);
         }
       } catch (err) {
         console.error("Failed to fetch staff", err);
@@ -109,12 +109,9 @@ export default function HRForm({
 
     const fetchDepartmentSoftware = async () => {
       try {
-        const response = await fetch(
-          `${apiBaseUrl}/api/workflow-options?department=${encodeURIComponent(formData.department)}`
-        );
-        const data = await response.json();
+        const { ok, data } = await api.fetchWorkflowOptions(formData.department);
 
-        if (isMounted && response.ok) {
+        if (isMounted && ok) {
           setDepartmentSoftware({
             preInstalledSoftware: Array.isArray(data.preInstalledSoftware) ? data.preInstalledSoftware : [],
             employeeInstalledSoftware: Array.isArray(data.employeeInstalledSoftware) ? data.employeeInstalledSoftware : [],

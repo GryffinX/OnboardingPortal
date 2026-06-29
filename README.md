@@ -116,7 +116,12 @@ Onboarding-App/
    ```bash
    python manage.py migrate
    ```
-6. **Start the Development Server**:
+6. **Create the first administrator** (required on a new database):
+   ```bash
+   python manage.py createsuperuser --username admin@example.com --email admin@example.com
+   ```
+   Use an email address for both username and email so it can be entered on the portal login screen.
+7. **Start the Development Server**:
    ```bash
    python manage.py runserver 0.0.0.0:8000
    ```

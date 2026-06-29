@@ -126,10 +126,11 @@ const AdminDashboard = ({
 
   const fetchDepts = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/departments`);
-      const data = await response.json();
-      if (response.ok && Array.isArray(data.departments)) {
+      const { ok, data } = await api.fetchDepartments();
+      if (ok && Array.isArray(data.departments)) {
         setDepartments(data.departments);
+      } else {
+        onShowNotice("error", "Departments Unavailable", data.message || "Failed to load departments.");
       }
     } catch (err) {
       console.error("Failed to fetch departments", err);
@@ -256,8 +257,10 @@ const AdminDashboard = ({
     const { ok, data } = await api.updateSoftwareItem(
       editingSoftware.originalName, 
       editingSoftware.originalCategory,
+      editingSoftware.originalDepartment,
       editingSoftware.newName,
       editingSoftware.newCategory,
+      editingSoftware.newDepartment,
       currentUser?.id
     );
     if (ok) {
@@ -667,7 +670,7 @@ const AdminDashboard = ({
                       message: `Delete "${dept}"?`,
                       confirmLabel: "Delete",
                       tone: "danger",
-                      onConfirm: async () => { const {ok, data} = await api.deleteDepartment(dept); if(ok) { fetchDepts(); fetchChangelogs(); } else onShowNotice("error", "Error", data.message); }
+                      onConfirm: async () => { const {ok, data} = await api.deleteDepartment(dept, currentUser?.id); if(ok) { fetchDepts(); fetchChangelogs(); } else onShowNotice("error", "Error", data.message); }
                     })}>Delete</button>
                   </div>
                 </div>

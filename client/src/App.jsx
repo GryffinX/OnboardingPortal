@@ -83,7 +83,7 @@ function ConfirmationModal({ config, onCancel }) {
           <div>
             <h3>{title}</h3>
           </div>
-          <button className="ghost-button" onClick={onCancel}>✕</button>
+          <button className="ghost-button" onClick={onCancel}>âœ•</button>
         </div>
         <div style={{ padding: "24px" }}>
           <p style={{ marginBottom: "24px", color: "#475569", lineHeight: 1.5 }}>{message}</p>
@@ -853,7 +853,7 @@ function App() {
                   request={currentUserRequest}
                   onUpdateProfile={(updated) => {
                     setCurrentUser(updated);
-                    writeStoredSession({ user: updated });
+                    writeStoredSession({ user: updated, token: readStoredSession()?.token || null });
                   }}
                   onShowNotice={showNotice}
                 />

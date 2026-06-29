@@ -68,8 +68,14 @@ def create_user(request):
                 dept, _ = Department.objects.get_or_create(name=department_name)
             elif department_name:
                 dept = Department.objects.filter(name=department_name).first()
-            
-            # Create profile
+
+            profile = UserProfile(
+                user=user,
+                role=role,
+                department=dept,
+                phone_number=phone,
+                employee_code=employee_code or None,
+            )
             profile.save()
 
             actor_id = payload.get("actorId")

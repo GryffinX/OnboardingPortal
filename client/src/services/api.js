@@ -1,4 +1,4 @@
-const apiBaseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 function getAuthHeaders(existingHeaders = {}) {
   const sessionData = localStorage.getItem('onboarding_session');
@@ -17,14 +17,29 @@ function getAuthHeaders(existingHeaders = {}) {
   return headers;
 }
 
-const originalFetch = window.fetch;
-window.fetch = function() {
+const originalFetch = window.fetch.bind(window);
+window.fetch = async function() {
     let [resource, config] = arguments;
     if (typeof resource === 'string' && resource.includes('/api/') && !resource.includes('/api/login') && !resource.includes('/api/forgot-password') && !resource.includes('/api/verify-otp') && !resource.includes('/api/reset-password')) {
         config = config || {};
-        config.headers = getAuthHeaders(config.headers);
+        const headers = new Headers(config.headers || {});
+        const authHeaders = getAuthHeaders();
+        if (authHeaders.Authorization && !headers.has('Authorization')) {
+          headers.set('Authorization', authHeaders.Authorization);
+        }
+        config.headers = headers;
     }
-    return originalFetch(resource, config);
+    try {
+      return await originalFetch(resource, config);
+    } catch (error) {
+      console.error('API request failed', error);
+      return new Response(JSON.stringify({
+        message: `Unable to reach the server at ${apiBaseUrl}. Make sure the Django service is running.`,
+      }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 };
 
 export const api = {
@@ -71,6 +86,12 @@ export const api = {
   async fetchUsers() {
     const response = await fetch(`${apiBaseUrl}/api/users`);
     const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, data };
+  },
+
+  async fetchDepartments() {
+    const response = await fetch(`${apiBaseUrl}/api/departments`);
+    const data = await response.json().catch(() => ({ departments: [] }));
     return { ok: response.ok, data };
   },
 
