@@ -754,20 +754,6 @@ function RequestDetailPanel({
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
-                <div className="form-group">
-                  <label>Employee Code (Optional)</label>
-                  <input
-                    type="text"
-                    className="dashboard-search"
-                    value={adminEmpCodeDraft}
-                    onChange={(e) => setAdminEmpCodeDraft(cleanNumericInput(e.target.value, 5))}
-                    placeholder="Auto-generated if blank"
-                    maxLength={5}
-                  />
-                </div>
-              </div>
-
               <div style={{ marginBottom: "12px" }}>
                 <label style={{ display: "block", marginBottom: "4px", fontSize: "0.85rem", fontWeight: "600", color: "#475569" }}>
                   Instructions for Infra Executive
